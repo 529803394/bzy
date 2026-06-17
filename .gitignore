@@ -16,5 +16,7 @@ app/build/intermediates/
 app/build/outputs/
 .gradle/
 build/
+build2/
 out/
 *.log
+*.flat
