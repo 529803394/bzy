@@ -1,22 +1,39 @@
+# Gradle/IDE
 *.iml
 .gradle
 /local.properties
 /.idea
 .DS_Store
+
+# Build output directories
 /build
 /captures
 .externalNativeBuild
 .cxx
 app/build/
-*.apk
-*.aar
-*.class
-*.dex
-app/build/intermediates/
-app/build/outputs/
-.gradle/
 build/
 build2/
 out/
-*.log
+
+# APK/AAR compiled binaries (绝对不能提交)
+*.apk
+*.apk.idsig
+*.aligned.apk
+*.unaligned.apk
+*.aar
+*.ap_
+
+# Compiled Java
+*.class
+*.dex
+
+# Compiled resources
 *.flat
+*.arsc
+
+# Build intermediates
+app/build/intermediates/
+app/build/outputs/
+
+# Logs
+*.log
