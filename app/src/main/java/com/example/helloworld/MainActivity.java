@@ -37,20 +37,55 @@ public class MainActivity extends Activity {
     private LinearLayout contentArea; // 主内容区
     private int currentTab = TAB_HOME;
 
+    // 主题模式常量
+    public static final int THEME_FOLLOW_SYSTEM = 0;
+    public static final int THEME_LIGHT = 1;
+    public static final int THEME_DARK = 2;
+
+    // 读取当前主题模式（持久化）
+    static int getThemeMode(Activity ctx) {
+        return ctx.getSharedPreferences("whitenoise_settings", MODE_PRIVATE)
+                .getInt("theme_mode", THEME_FOLLOW_SYSTEM);
+    }
+
+    // 是否应该用深色主题（考虑跟随系统）
+    static boolean isDarkMode(Activity ctx) {
+        int mode = getThemeMode(ctx);
+        if (mode == THEME_LIGHT) return false;
+        if (mode == THEME_DARK) return true;
+        // 跟随系统：检测系统 uiMode
+        int uiMode = ctx.getResources().getConfiguration().uiMode
+                & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+        return uiMode == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    // 获取主题名
+    static String getThemeName(int mode) {
+        if (mode == THEME_LIGHT) return "浅色";
+        if (mode == THEME_DARK) return "深色";
+        return "跟随系统";
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // 状态栏浅色
         getWindow().requestFeature(Window.FEATURE_NO_TITLE);
+        // 根据主题模式设置状态栏颜色
+        boolean dark = isDarkMode(this);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            getWindow().setStatusBarColor(Color.parseColor("#F7F7F7"));
+            getWindow().setStatusBarColor(dark ? Color.parseColor("#1a1a1a")
+                    : Color.parseColor("#F7F7F7"));
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+                int flags = getWindow().getDecorView().getSystemUiVisibility();
+                if (dark) flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                else flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                getWindow().getDecorView().setSystemUiVisibility(flags);
             }
         }
 
         FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.parseColor("#F7F7F7"));
+        root.setBackgroundColor(dark ? Color.parseColor("#121212")
+                : Color.parseColor("#F7F7F7"));
 
         // 主内容区
         contentArea = new LinearLayout(this);
@@ -64,16 +99,14 @@ public class MainActivity extends Activity {
         // 底部Tab栏
         LinearLayout tabBar = new LinearLayout(this);
         tabBar.setOrientation(LinearLayout.HORIZONTAL);
-        tabBar.setBackgroundColor(Color.WHITE);
+        tabBar.setBackgroundColor(dark ? Color.parseColor("#1e1e1e")
+                : Color.WHITE);
         tabBar.setGravity(Gravity.CENTER_VERTICAL);
         FrameLayout.LayoutParams tbp = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             dip2px(56));
         tbp.gravity = Gravity.BOTTOM;
         tabBar.setLayoutParams(tbp);
-
-        // 顶部分割线
-        // 分割线放tabBar内部顶部：我们直接加在tabBar上方的FrameLayout中
 
         addTab(tabBar, "首页", TAB_HOME);
         addTab(tabBar, "乐库", TAB_LIBRARY);
@@ -84,7 +117,8 @@ public class MainActivity extends Activity {
 
         // 顶部分割线
         View topDiv = new View(this);
-        topDiv.setBackgroundColor(Color.parseColor("#E5E5E5"));
+        topDiv.setBackgroundColor(dark ? Color.parseColor("#2a2a2a")
+                : Color.parseColor("#E5E5E5"));
         FrameLayout.LayoutParams tdlp = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, dip2px(0.5f));
         tdlp.gravity = Gravity.BOTTOM;
@@ -138,15 +172,20 @@ public class MainActivity extends Activity {
     private void switchTab(int id) {
         currentTab = id;
         contentArea.removeAllViews();
+        boolean dark = isDarkMode(this);
 
-        // 更新tab样式
+        // 更新 tab 样式：激活色根据浅/深主题调整
         LinearLayout tabBar = (LinearLayout) ((FrameLayout) contentArea.getParent()).getChildAt(1);
         if (tabBar != null) {
             for (int i = 0; i < tabBar.getChildCount(); i++) {
                 LinearLayout tab = (LinearLayout) tabBar.getChildAt(i);
                 TextView icon = (TextView) tab.getChildAt(0);
                 TextView label = (TextView) tab.getChildAt(1);
-                int color = (tab.getId() == id) ? Color.parseColor("#07C160") : Color.parseColor("#999999");
+                int active = dark ? Color.parseColor("#4dd0e1")
+                        : Color.parseColor("#07C160");
+                int inactive = dark ? Color.parseColor("#8a8a8a")
+                        : Color.parseColor("#999999");
+                int color = (tab.getId() == id) ? active : inactive;
                 icon.setTextColor(color);
                 label.setTextColor(color);
             }
@@ -157,17 +196,19 @@ public class MainActivity extends Activity {
         title.setText(getTitleText(id));
         title.setTextSize(17);
         title.getPaint().setFakeBoldText(true);
-        title.setTextColor(Color.BLACK);
+        title.setTextColor(dark ? Color.WHITE : Color.BLACK);
         title.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dip2px(48));
         title.setLayoutParams(tlp);
-        title.setBackgroundColor(Color.parseColor("#F7F7F7"));
+        title.setBackgroundColor(dark ? Color.parseColor("#1e1e1e")
+                : Color.parseColor("#F7F7F7"));
         contentArea.addView(title);
 
         // 标题下方分割线
         View div = new View(this);
-        div.setBackgroundColor(Color.parseColor("#E5E5E5"));
+        div.setBackgroundColor(dark ? Color.parseColor("#2a2a2a")
+                : Color.parseColor("#E5E5E5"));
         contentArea.addView(div, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dip2px(0.5f)));
 
@@ -187,12 +228,18 @@ public class MainActivity extends Activity {
 
     // -------- 首页：聊天列表 --------
     private void renderHome() {
+        final boolean dark = isDarkMode(this);
+        int textMain = dark ? Color.WHITE : Color.BLACK;
+        int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#999999");
+        int cardBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
+        int cardDiv = dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#EDEDED");
+
         List<SoundStore.Sound> list = SoundStore.getHomeList(this);
         if (list.isEmpty()) {
             TextView empty = new TextView(this);
             empty.setText("暂无聊天，去乐库添加白噪音吧");
             empty.setTextSize(14);
-            empty.setTextColor(Color.parseColor("#999999"));
+            empty.setTextColor(textSub);
             empty.setGravity(Gravity.CENTER);
             LinearLayout.LayoutParams elp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -211,14 +258,14 @@ public class MainActivity extends Activity {
 
         LinearLayout items = new LinearLayout(this);
         items.setOrientation(LinearLayout.VERTICAL);
-        items.setBackgroundColor(Color.WHITE);
+        items.setBackgroundColor(cardBg);
         sv.addView(items);
 
         for (final SoundStore.Sound s : list) {
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setBackgroundColor(Color.WHITE);
+            row.setBackgroundColor(cardBg);
             row.setPadding(dip2px(14), dip2px(12), dip2px(14), dip2px(12));
             LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -260,7 +307,7 @@ public class MainActivity extends Activity {
             String prefix = s.isPinned ? "📌 " : "";
             nameLabel.setText(prefix + s.name);
             nameLabel.setTextSize(16);
-            nameLabel.setTextColor(Color.BLACK);
+            nameLabel.setTextColor(textMain);
             nameLabel.getPaint().setFakeBoldText(true);
             LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
@@ -270,7 +317,7 @@ public class MainActivity extends Activity {
             TextView timeLabel = new TextView(this);
             timeLabel.setText(SoundStore.formatTime(s.lastTime));
             timeLabel.setTextSize(11);
-            timeLabel.setTextColor(Color.parseColor("#B2B2B2"));
+            timeLabel.setTextColor(textSub);
             timeLabel.setGravity(Gravity.RIGHT);
             timeLabel.setLayoutParams(new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -285,7 +332,7 @@ public class MainActivity extends Activity {
             if (preview.length() > 20) preview = preview.substring(0, 20) + "...";
             msgLabel.setText(preview);
             msgLabel.setTextSize(13);
-            msgLabel.setTextColor(Color.parseColor("#999999"));
+            msgLabel.setTextColor(textSub);
             msgLabel.setPadding(0, dip2px(4), 0, 0);
             LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -312,7 +359,7 @@ public class MainActivity extends Activity {
 
             // 分割线
             View line = new View(this);
-            line.setBackgroundColor(Color.parseColor("#EDEDED"));
+            line.setBackgroundColor(cardDiv);
             items.addView(line, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dip2px(0.5f)));
         }
@@ -322,6 +369,10 @@ public class MainActivity extends Activity {
 
     // 聊天项操作弹窗
     private void showSoundMenu(final SoundStore.Sound s) {
+        final boolean dark = isDarkMode(this);
+        final int panelBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
+        final int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#999999");
+
         final FrameLayout container = new FrameLayout(this);
         container.setLayoutParams(new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
@@ -330,7 +381,7 @@ public class MainActivity extends Activity {
 
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setBackgroundColor(Color.WHITE);
+        panel.setBackgroundColor(panelBg);
         FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT);
@@ -343,7 +394,7 @@ public class MainActivity extends Activity {
         TextView title = new TextView(this);
         title.setText(s.name);
         title.setTextSize(12);
-        title.setTextColor(Color.parseColor("#999999"));
+        title.setTextColor(textSub);
         title.setGravity(Gravity.CENTER);
         title.setPadding(0, dip2px(14), 0, 0);
         panel.addView(title);
@@ -377,11 +428,14 @@ public class MainActivity extends Activity {
     }
 
     private Button makeMenuBtn(String text, View.OnClickListener l) {
+        boolean dark = isDarkMode(this);
+        int textMain = dark ? Color.WHITE : Color.BLACK;
+        int panelBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
         Button b = new Button(this);
         b.setText(text);
         b.setTextSize(17);
-        b.setTextColor(Color.BLACK);
-        b.setBackgroundColor(Color.WHITE);
+        b.setTextColor(textMain);
+        b.setBackgroundColor(panelBg);
         LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dip2px(54));
         bp.topMargin = dip2px(4);
@@ -392,6 +446,13 @@ public class MainActivity extends Activity {
 
     // -------- 乐库页面 --------
     private void renderLibrary() {
+        boolean dark = isDarkMode(this);
+        int textMain = dark ? Color.WHITE : Color.BLACK;
+        int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#999999");
+        int cardBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
+        int cardDiv = dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#EDEDED");
+        int tipBg = dark ? Color.parseColor("#151515") : Color.parseColor("#F7F7F7");
+
         List<SoundStore.Sound> list = SoundStore.getLibraryList(this);
 
         ScrollView sv = new ScrollView(this);
@@ -400,17 +461,17 @@ public class MainActivity extends Activity {
 
         LinearLayout items = new LinearLayout(this);
         items.setOrientation(LinearLayout.VERTICAL);
-        items.setBackgroundColor(Color.WHITE);
+        items.setBackgroundColor(cardBg);
         sv.addView(items);
 
         // 说明
         TextView tip = new TextView(this);
         tip.setText("点击白噪音将恢复到首页并进入聊天");
         tip.setTextSize(12);
-        tip.setTextColor(Color.parseColor("#999999"));
+        tip.setTextColor(textSub);
         tip.setGravity(Gravity.CENTER);
         tip.setPadding(0, dip2px(12), 0, dip2px(12));
-        tip.setBackgroundColor(Color.parseColor("#F7F7F7"));
+        tip.setBackgroundColor(tipBg);
         items.addView(tip, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -420,7 +481,7 @@ public class MainActivity extends Activity {
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(dip2px(14), dip2px(14), dip2px(14), dip2px(14));
-            row.setBackgroundColor(Color.WHITE);
+            row.setBackgroundColor(cardBg);
             LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -455,21 +516,20 @@ public class MainActivity extends Activity {
             String status = s.isDeleted ? "（已从首页移除）" : "";
             nameLabel.setText(s.name + tag + status);
             nameLabel.setTextSize(16);
-            nameLabel.setTextColor(Color.BLACK);
+            nameLabel.setTextColor(textMain);
             nameLabel.getPaint().setFakeBoldText(true);
             rightWrap.addView(nameLabel);
 
             TextView desc = new TextView(this);
             desc.setText("点击恢复到首页并进入聊天");
             desc.setTextSize(12);
-            desc.setTextColor(Color.parseColor("#999999"));
+            desc.setTextColor(textSub);
             desc.setPadding(0, dip2px(4), 0, 0);
             rightWrap.addView(desc);
 
             row.addView(rightWrap);
 
             row.setOnClickListener(v -> {
-                // 从乐库点击：如果被删除则恢复，然后进入聊天
                 if (s.isDeleted) {
                     SoundStore.markDeleted(MainActivity.this, s.id, false);
                 }
@@ -481,7 +541,7 @@ public class MainActivity extends Activity {
             items.addView(row);
 
             View line = new View(this);
-            line.setBackgroundColor(Color.parseColor("#EDEDED"));
+            line.setBackgroundColor(cardDiv);
             items.addView(line, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dip2px(0.5f)));
         }
@@ -491,10 +551,15 @@ public class MainActivity extends Activity {
 
     // -------- 发现页面：建设中 --------
     private void renderDiscover() {
+        boolean dark = isDarkMode(this);
+        int textMain = dark ? Color.WHITE : Color.BLACK;
+        int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#999999");
+        int bg = dark ? Color.parseColor("#121212") : Color.parseColor("#F7F7F7");
+
         FrameLayout holder = new FrameLayout(this);
         holder.setLayoutParams(new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
-        holder.setBackgroundColor(Color.parseColor("#F7F7F7"));
+        holder.setBackgroundColor(bg);
 
         LinearLayout center = new LinearLayout(this);
         center.setOrientation(LinearLayout.VERTICAL);
@@ -514,7 +579,7 @@ public class MainActivity extends Activity {
         TextView t = new TextView(this);
         t.setText("发现页");
         t.setTextSize(20);
-        t.setTextColor(Color.BLACK);
+        t.setTextColor(textMain);
         t.setGravity(Gravity.CENTER);
         t.setPadding(0, dip2px(12), 0, dip2px(8));
         t.getPaint().setFakeBoldText(true);
@@ -523,7 +588,7 @@ public class MainActivity extends Activity {
         TextView sub = new TextView(this);
         sub.setText("正在建设中");
         sub.setTextSize(14);
-        sub.setTextColor(Color.parseColor("#999999"));
+        sub.setTextColor(textSub);
         sub.setGravity(Gravity.CENTER);
         center.addView(sub);
 
@@ -533,10 +598,17 @@ public class MainActivity extends Activity {
 
     // -------- 我页面（包含设置、添加、管理） --------
     private void renderMe() {
+        boolean dark = isDarkMode(this);
+        int textMain = dark ? Color.WHITE : Color.BLACK;
+        int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#999999");
+        int cardBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
+        int pageBg = dark ? Color.parseColor("#121212") : Color.parseColor("#EDEDED");
+        int sepColor = dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#EDEDED");
+
         ScrollView sv = new ScrollView(this);
         sv.setLayoutParams(new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
-        sv.setBackgroundColor(Color.parseColor("#EDEDED"));
+        sv.setBackgroundColor(pageBg);
 
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
@@ -546,7 +618,7 @@ public class MainActivity extends Activity {
         LinearLayout profile = new LinearLayout(this);
         profile.setOrientation(LinearLayout.HORIZONTAL);
         profile.setGravity(Gravity.CENTER_VERTICAL);
-        profile.setBackgroundColor(Color.WHITE);
+        profile.setBackgroundColor(cardBg);
         profile.setPadding(dip2px(20), dip2px(28), dip2px(20), dip2px(28));
         container.addView(profile, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -579,14 +651,14 @@ public class MainActivity extends Activity {
         TextView uname = new TextView(this);
         uname.setText("白噪音用户");
         uname.setTextSize(19);
-        uname.setTextColor(Color.BLACK);
+        uname.setTextColor(textMain);
         uname.getPaint().setFakeBoldText(true);
         ptext.addView(uname);
 
         TextView uacc = new TextView(this);
         uacc.setText("微信号: whitenoise");
         uacc.setTextSize(12);
-        uacc.setTextColor(Color.parseColor("#999999"));
+        uacc.setTextColor(textSub);
         uacc.setPadding(0, dip2px(6), 0, 0);
         ptext.addView(uacc);
         profile.addView(ptext);
@@ -598,7 +670,7 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams.MATCH_PARENT, dip2px(12)));
 
         // 功能列表：设置、添加、管理
-        container.addView(makeMenuRow("⚙️", "设置", "后台播放、版本信息", v -> showSettingsDialog()));
+        container.addView(makeMenuRow("⚙️", "设置", "主题/后台播放", v -> showSettingsDialog()));
         container.addView(lineSep());
         container.addView(makeMenuRow("➕", "添加白噪音", "添加自定义音频URL", v -> showAddDialog()));
         container.addView(lineSep());
@@ -608,10 +680,16 @@ public class MainActivity extends Activity {
     }
 
     private LinearLayout makeMenuRow(String icon, String title, String subtitle, View.OnClickListener l) {
+        boolean dark = isDarkMode(this);
+        int textMain = dark ? Color.WHITE : Color.BLACK;
+        int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#999999");
+        int cardBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
+        int arrowColor = dark ? Color.parseColor("#666666") : Color.parseColor("#CCCCCC");
+
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setBackgroundColor(Color.WHITE);
+        row.setBackgroundColor(cardBg);
         row.setPadding(dip2px(20), dip2px(16), dip2px(20), dip2px(16));
         LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -633,14 +711,14 @@ public class MainActivity extends Activity {
         TextView t = new TextView(this);
         t.setText(title);
         t.setTextSize(16);
-        t.setTextColor(Color.BLACK);
+        t.setTextColor(textMain);
         text.addView(t);
 
         if (subtitle != null) {
             TextView s = new TextView(this);
             s.setText(subtitle);
             s.setTextSize(12);
-            s.setTextColor(Color.parseColor("#999999"));
+            s.setTextColor(textSub);
             s.setPadding(0, dip2px(4), 0, 0);
             text.addView(s);
         }
@@ -649,7 +727,7 @@ public class MainActivity extends Activity {
         TextView arrow = new TextView(this);
         arrow.setText(">");
         arrow.setTextSize(18);
-        arrow.setTextColor(Color.parseColor("#CCCCCC"));
+        arrow.setTextColor(arrowColor);
         row.addView(arrow);
 
         row.setOnClickListener(l);
@@ -657,16 +735,25 @@ public class MainActivity extends Activity {
     }
 
     private View lineSep() {
+        boolean dark = isDarkMode(this);
+        int sepColor = dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#EDEDED");
         View v = new View(this);
-        v.setBackgroundColor(Color.parseColor("#EDEDED"));
+        v.setBackgroundColor(sepColor);
         v.setMinimumHeight(dip2px(0.5f));
         v.setLayoutParams(new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dip2px(0.5f)));
         return v;
     }
 
-    // -------- 设置弹窗 --------
+    // -------- 设置弹窗（含主题模式选择） --------
     private void showSettingsDialog() {
+        final boolean dark = isDarkMode(this);
+        final int textMain = dark ? Color.WHITE : Color.BLACK;
+        final int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#999999");
+        final int panelBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
+        final int btnBg = dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#F3F3F3");
+        final int btnActive = dark ? Color.parseColor("#4dd0e1") : Color.parseColor("#07C160");
+
         final FrameLayout container = new FrameLayout(this);
         container.setLayoutParams(new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
@@ -675,25 +762,93 @@ public class MainActivity extends Activity {
 
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setBackgroundColor(Color.WHITE);
+        panel.setBackgroundColor(panelBg);
         FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT);
         plp.gravity = Gravity.CENTER;
-        plp.width = dip2px(300);
+        plp.width = dip2px(310);
         panel.setLayoutParams(plp);
         panel.setPadding(0, dip2px(20), 0, dip2px(12));
 
         TextView title = new TextView(this);
         title.setText("设置");
         title.setTextSize(19);
-        title.setTextColor(Color.BLACK);
+        title.setTextColor(textMain);
         title.setGravity(Gravity.CENTER);
         title.getPaint().setFakeBoldText(true);
-        title.setPadding(0, 0, 0, dip2px(16));
+        title.setPadding(0, 0, 0, dip2px(10));
         panel.addView(title);
 
-        // 后台播放开关
+        // -- 主题模式 --
+        TextView themeLabel = new TextView(this);
+        themeLabel.setText("主题模式");
+        themeLabel.setTextSize(14);
+        themeLabel.setTextColor(textMain);
+        themeLabel.setPadding(dip2px(16), dip2px(12), dip2px(16), dip2px(8));
+        panel.addView(themeLabel);
+
+        final int currentMode = getThemeMode(this);
+        final int[] modes = new int[]{THEME_FOLLOW_SYSTEM, THEME_LIGHT, THEME_DARK};
+        final String[] labels = new String[]{"跟随系统", "浅色", "深色"};
+        LinearLayout themeBtns = new LinearLayout(this);
+        themeBtns.setOrientation(LinearLayout.HORIZONTAL);
+        themeBtns.setPadding(dip2px(16), 0, dip2px(16), dip2px(4));
+        themeBtns.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        for (int i = 0; i < modes.length; i++) {
+            Button b = new Button(this);
+            b.setText(labels[i]);
+            b.setTextSize(13);
+            final boolean active = currentMode == modes[i];
+            b.setTextColor(active ? Color.WHITE : textMain);
+            GradientDrawable g = new GradientDrawable();
+            g.setCornerRadius(dip2px(8));
+            g.setColor(active ? btnActive : btnBg);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+                b.setBackground(g);
+            } else {
+                b.setBackgroundDrawable(g);
+            }
+            final int mode = modes[i];
+            b.setOnClickListener(v -> {
+                getSharedPreferences("whitenoise_settings", MODE_PRIVATE)
+                    .edit().putInt("theme_mode", mode).apply();
+                ((ViewGroup) container.getParent()).removeView(container);
+                // 刷新当前 activity：重新创建
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+                    MainActivity.this.recreate();
+                } else {
+                    refresh();
+                }
+            });
+            LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
+                0, dip2px(38), 1);
+            if (i > 0) blp.leftMargin = dip2px(8);
+            b.setLayoutParams(blp);
+            themeBtns.addView(b);
+        }
+        panel.addView(themeBtns);
+
+        // 显示当前
+        TextView themeHint = new TextView(this);
+        themeHint.setText("当前: " + getThemeName(currentMode));
+        themeHint.setTextSize(11);
+        themeHint.setTextColor(textSub);
+        themeHint.setGravity(Gravity.CENTER);
+        themeHint.setPadding(0, dip2px(6), 0, 0);
+        panel.addView(themeHint);
+
+        // 分割线
+        View divider = new View(this);
+        divider.setBackgroundColor(dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#E5E5E5"));
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dip2px(0.5f));
+        dlp.topMargin = dip2px(10);
+        divider.setLayoutParams(dlp);
+        panel.addView(divider);
+
+        // -- 后台播放开关 --
         LinearLayout bgRow = new LinearLayout(this);
         bgRow.setOrientation(LinearLayout.HORIZONTAL);
         bgRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -711,13 +866,13 @@ public class MainActivity extends Activity {
         TextView bgt1 = new TextView(this);
         bgt1.setText("后台播放");
         bgt1.setTextSize(15);
-        bgt1.setTextColor(Color.BLACK);
+        bgt1.setTextColor(textMain);
         bgText.addView(bgt1);
 
         TextView bgt2 = new TextView(this);
         bgt2.setText("返回后可继续播放（助眠场景）");
         bgt2.setTextSize(11);
-        bgt2.setTextColor(Color.parseColor("#999999"));
+        bgt2.setTextColor(textSub);
         bgt2.setPadding(0, dip2px(4), 0, 0);
         bgText.addView(bgt2);
         bgRow.addView(bgText);
@@ -738,7 +893,7 @@ public class MainActivity extends Activity {
         TextView ver = new TextView(this);
         ver.setText("版本: 2.0.0");
         ver.setTextSize(12);
-        ver.setTextColor(Color.parseColor("#999999"));
+        ver.setTextColor(textSub);
         ver.setGravity(Gravity.CENTER);
         ver.setPadding(0, dip2px(16), 0, dip2px(12));
         panel.addView(ver);
@@ -747,8 +902,8 @@ public class MainActivity extends Activity {
         Button close = new Button(this);
         close.setText("关闭");
         close.setTextSize(15);
-        close.setTextColor(Color.parseColor("#07C160"));
-        close.setBackgroundColor(Color.WHITE);
+        close.setTextColor(dark ? Color.parseColor("#4dd0e1") : Color.parseColor("#07C160"));
+        close.setBackgroundColor(Color.TRANSPARENT);
         LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -771,6 +926,12 @@ public class MainActivity extends Activity {
 
     // -------- 添加白噪音弹窗 --------
     private void showAddDialog() {
+        final boolean dark = isDarkMode(this);
+        final int textMain = dark ? Color.WHITE : Color.BLACK;
+        final int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#666666");
+        final int panelBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
+        final int inputBg = dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#F5F5F5");
+
         final FrameLayout container = new FrameLayout(this);
         container.setLayoutParams(new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
@@ -779,7 +940,7 @@ public class MainActivity extends Activity {
 
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setBackgroundColor(Color.WHITE);
+        panel.setBackgroundColor(panelBg);
         FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT);
@@ -791,7 +952,7 @@ public class MainActivity extends Activity {
         TextView title = new TextView(this);
         title.setText("添加白噪音");
         title.setTextSize(18);
-        title.setTextColor(Color.BLACK);
+        title.setTextColor(textMain);
         title.setGravity(Gravity.CENTER);
         title.getPaint().setFakeBoldText(true);
         title.setPadding(0, 0, 0, dip2px(14));
@@ -800,14 +961,18 @@ public class MainActivity extends Activity {
         final EditText nameInput = new EditText(this);
         nameInput.setHint("名称");
         nameInput.setTextSize(15);
-        nameInput.setBackgroundColor(Color.parseColor("#F5F5F5"));
+        nameInput.setTextColor(textMain);
+        nameInput.setHintTextColor(textSub);
+        nameInput.setBackgroundColor(inputBg);
         nameInput.setPadding(dip2px(12), dip2px(10), dip2px(12), dip2px(10));
         panel.addView(nameInput);
 
         final EditText urlInput = new EditText(this);
         urlInput.setHint("音频URL (https://...)");
         urlInput.setTextSize(15);
-        urlInput.setBackgroundColor(Color.parseColor("#F5F5F5"));
+        urlInput.setTextColor(textMain);
+        urlInput.setHintTextColor(textSub);
+        urlInput.setBackgroundColor(inputBg);
         urlInput.setPadding(dip2px(12), dip2px(10), dip2px(12), dip2px(10));
         LinearLayout.LayoutParams ulp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -847,7 +1012,7 @@ public class MainActivity extends Activity {
         cancel.setText("取消");
         cancel.setTextSize(15);
         cancel.setTextColor(Color.parseColor("#666666"));
-        cancel.setBackgroundColor(Color.WHITE);
+        cancel.setBackgroundColor(Color.TRANSPARENT);
         LinearLayout.LayoutParams cap = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dip2px(44));
         cap.topMargin = dip2px(6);
@@ -865,6 +1030,12 @@ public class MainActivity extends Activity {
 
     // -------- 管理自定义弹窗 --------
     private void showManageDialog() {
+        final boolean dark = isDarkMode(this);
+        final int textMain = dark ? Color.WHITE : Color.BLACK;
+        final int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#999999");
+        final int panelBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
+        final int cardBg = dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#F8F8F8");
+
         List<SoundStore.Sound> customs = new ArrayList<>();
         for (SoundStore.Sound s : SoundStore.getAll(this)) {
             if (s.isCustom) customs.add(s);
@@ -886,14 +1057,14 @@ public class MainActivity extends Activity {
 
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setBackgroundColor(Color.WHITE);
+        panel.setBackgroundColor(panelBg);
         panel.setPadding(dip2px(14), dip2px(18), dip2px(14), dip2px(12));
         sv.addView(panel);
 
         TextView title = new TextView(this);
         title.setText("管理自定义白噪音");
         title.setTextSize(18);
-        title.setTextColor(Color.BLACK);
+        title.setTextColor(textMain);
         title.setGravity(Gravity.CENTER);
         title.getPaint().setFakeBoldText(true);
         title.setPadding(0, 0, 0, dip2px(14));
@@ -903,7 +1074,7 @@ public class MainActivity extends Activity {
             TextView empty = new TextView(this);
             empty.setText("暂无自定义白噪音");
             empty.setTextSize(14);
-            empty.setTextColor(Color.parseColor("#999999"));
+            empty.setTextColor(textSub);
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(0, dip2px(20), 0, dip2px(20));
             panel.addView(empty);
@@ -911,7 +1082,7 @@ public class MainActivity extends Activity {
             for (final SoundStore.Sound s : customs) {
                 LinearLayout row = new LinearLayout(this);
                 row.setOrientation(LinearLayout.VERTICAL);
-                row.setBackgroundColor(Color.parseColor("#F8F8F8"));
+                row.setBackgroundColor(cardBg);
                 row.setPadding(dip2px(12), dip2px(12), dip2px(12), dip2px(12));
                 LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -922,13 +1093,13 @@ public class MainActivity extends Activity {
                 TextView n = new TextView(this);
                 n.setText(s.name);
                 n.setTextSize(15);
-                n.setTextColor(Color.BLACK);
+                n.setTextColor(textMain);
                 row.addView(n);
 
                 TextView url = new TextView(this);
                 url.setText(s.url);
                 url.setTextSize(11);
-                url.setTextColor(Color.parseColor("#999999"));
+                url.setTextColor(textSub);
                 url.setPadding(0, dip2px(4), 0, dip2px(8));
                 row.addView(url);
 
@@ -980,7 +1151,7 @@ public class MainActivity extends Activity {
         close.setText("关闭");
         close.setTextSize(14);
         close.setTextColor(Color.parseColor("#666666"));
-        close.setBackgroundColor(Color.WHITE);
+        close.setBackgroundColor(Color.TRANSPARENT);
         LinearLayout.LayoutParams clp2 = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dip2px(40));
         clp2.topMargin = dip2px(8);
@@ -991,14 +1162,20 @@ public class MainActivity extends Activity {
         panel.addView(close);
 
         container.addView(sv);
-        ViewGroup root = (ViewGroup) getWindow().getDecorView()
+        ViewGroup root2 = (ViewGroup) getWindow().getDecorView()
             .findViewById(android.R.id.content);
-        root.addView(container);
+        root2.addView(container);
     }
 
     private void showEditDialog(final String itemId) {
         final SoundStore.Sound s = SoundStore.findById(this, itemId);
         if (s == null) return;
+
+        final boolean dark = isDarkMode(this);
+        final int textMain = dark ? Color.WHITE : Color.BLACK;
+        final int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#666666");
+        final int panelBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
+        final int inputBg = dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#F5F5F5");
 
         final FrameLayout container = new FrameLayout(this);
         container.setLayoutParams(new FrameLayout.LayoutParams(
@@ -1008,7 +1185,7 @@ public class MainActivity extends Activity {
 
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setBackgroundColor(Color.WHITE);
+        panel.setBackgroundColor(panelBg);
         FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT);
@@ -1020,7 +1197,7 @@ public class MainActivity extends Activity {
         TextView title = new TextView(this);
         title.setText("修改白噪音");
         title.setTextSize(18);
-        title.setTextColor(Color.BLACK);
+        title.setTextColor(textMain);
         title.setGravity(Gravity.CENTER);
         title.getPaint().setFakeBoldText(true);
         title.setPadding(0, 0, 0, dip2px(14));
@@ -1029,14 +1206,18 @@ public class MainActivity extends Activity {
         final EditText nameInput = new EditText(this);
         nameInput.setText(s.name);
         nameInput.setTextSize(15);
-        nameInput.setBackgroundColor(Color.parseColor("#F5F5F5"));
+        nameInput.setTextColor(textMain);
+        nameInput.setHintTextColor(textSub);
+        nameInput.setBackgroundColor(inputBg);
         nameInput.setPadding(dip2px(12), dip2px(10), dip2px(12), dip2px(10));
         panel.addView(nameInput);
 
         final EditText urlInput = new EditText(this);
         urlInput.setText(s.url);
         urlInput.setTextSize(15);
-        urlInput.setBackgroundColor(Color.parseColor("#F5F5F5"));
+        urlInput.setTextColor(textMain);
+        urlInput.setHintTextColor(textSub);
+        urlInput.setBackgroundColor(inputBg);
         urlInput.setPadding(dip2px(12), dip2px(10), dip2px(12), dip2px(10));
         LinearLayout.LayoutParams ulp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -1072,7 +1253,7 @@ public class MainActivity extends Activity {
         cancel.setText("取消");
         cancel.setTextSize(15);
         cancel.setTextColor(Color.parseColor("#666666"));
-        cancel.setBackgroundColor(Color.WHITE);
+        cancel.setBackgroundColor(Color.TRANSPARENT);
         LinearLayout.LayoutParams cap = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dip2px(44));
         cap.topMargin = dip2px(6);
@@ -1083,9 +1264,9 @@ public class MainActivity extends Activity {
         panel.addView(cancel);
 
         container.addView(panel);
-        ViewGroup root = (ViewGroup) getWindow().getDecorView()
+        ViewGroup root3 = (ViewGroup) getWindow().getDecorView()
             .findViewById(android.R.id.content);
-        root.addView(container);
+        root3.addView(container);
     }
 
     // 从聊天页返回时刷新
@@ -1098,25 +1279,27 @@ public class MainActivity extends Activity {
     }
 
     private void refresh() {
-        // 不重新切tab，而是重新渲染当前页
+        boolean dark = isDarkMode(this);
+        int textMain = dark ? Color.WHITE : Color.BLACK;
+        int titleBg = dark ? Color.parseColor("#1e1e1e") : Color.parseColor("#F7F7F7");
+        int divColor = dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#E5E5E5");
+
         int saved = currentTab;
         contentArea.removeAllViews();
-        // 重新构建
-        // 标题栏
         TextView title = new TextView(this);
         title.setText(getTitleText(saved));
         title.setTextSize(17);
         title.getPaint().setFakeBoldText(true);
-        title.setTextColor(Color.BLACK);
+        title.setTextColor(textMain);
         title.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dip2px(48));
         title.setLayoutParams(tlp);
-        title.setBackgroundColor(Color.parseColor("#F7F7F7"));
+        title.setBackgroundColor(titleBg);
         contentArea.addView(title);
 
         View div = new View(this);
-        div.setBackgroundColor(Color.parseColor("#E5E5E5"));
+        div.setBackgroundColor(divColor);
         contentArea.addView(div, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dip2px(0.5f)));
 

@@ -56,20 +56,35 @@ public class ChatActivity extends Activity {
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
 
-        // 状态栏深色/浅色自适应
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            getWindow().setStatusBarColor(Color.parseColor("#1a1a1a"));
-        }
-
         soundId = getIntent().getStringExtra("sound_id");
         sound = SoundStore.findById(this, soundId);
         if (sound == null) { finish(); return; }
 
+        // 主题模式
+        final boolean dark = isDarkMode(this);
+        final int textMain = dark ? Color.WHITE : Color.BLACK;
+        final int textSub = dark ? Color.parseColor("#CCCCCC") : Color.parseColor("#666666");
+        final int cardBg = dark ? Color.parseColor("#222222") : Color.parseColor("#FAFAFA");
+        final int inputBg = dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#EDEDED");
+        final int primary = Color.parseColor("#07C160");
+
         messages = SoundStore.loadMessages(this, soundId);
 
-        // 背景根
+        // 状态栏：深色主题用深色，浅色主题用浅色 + 深色文字
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            getWindow().setStatusBarColor(dark ? Color.parseColor("#1a1a1a")
+                    : Color.parseColor("#F7F7F7"));
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                int flags = getWindow().getDecorView().getSystemUiVisibility();
+                if (dark) flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                else flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                getWindow().getDecorView().setSystemUiVisibility(flags);
+            }
+        }
+
+        // 背景根（颜色流动动画放在后面 startBgAnimation）
         bgRoot = new FrameLayout(this);
-        bgRoot.setBackgroundColor(Color.BLACK);
+        bgRoot.setBackgroundColor(dark ? Color.BLACK : Color.parseColor("#F7F7F7"));
 
         // 主垂直布局
         LinearLayout main = new LinearLayout(this);
@@ -83,7 +98,7 @@ public class ChatActivity extends Activity {
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
-        topBar.setBackgroundColor(Color.parseColor("#222222"));
+        topBar.setBackgroundColor(cardBg);
         topBar.setPadding(dip2px(8), 0, dip2px(8), 0);
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dip2px(50));
@@ -92,7 +107,7 @@ public class ChatActivity extends Activity {
         Button backBtn = new Button(this);
         backBtn.setText("←");
         backBtn.setTextSize(18);
-        backBtn.setTextColor(Color.WHITE);
+        backBtn.setTextColor(textMain);
         backBtn.setBackgroundColor(Color.TRANSPARENT);
         backBtn.setOnClickListener(v -> finish());
         LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
@@ -103,7 +118,7 @@ public class ChatActivity extends Activity {
         TextView title = new TextView(this);
         title.setText(sound.name);
         title.setTextSize(17);
-        title.setTextColor(Color.WHITE);
+        title.setTextColor(textMain);
         title.setGravity(Gravity.CENTER);
         title.getPaint().setFakeBoldText(true);
         LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
@@ -133,7 +148,7 @@ public class ChatActivity extends Activity {
         LinearLayout playerBar = new LinearLayout(this);
         playerBar.setOrientation(LinearLayout.HORIZONTAL);
         playerBar.setGravity(Gravity.CENTER_VERTICAL);
-        playerBar.setBackgroundColor(Color.parseColor("#222222"));
+        playerBar.setBackgroundColor(cardBg);
         playerBar.setPadding(dip2px(12), dip2px(10), dip2px(12), dip2px(10));
         LinearLayout.LayoutParams pllp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -143,7 +158,7 @@ public class ChatActivity extends Activity {
         playBtn.setText("▶ 播放");
         playBtn.setTextSize(14);
         playBtn.setTextColor(Color.WHITE);
-        playBtn.setBackgroundColor(Color.parseColor("#07C160"));
+        playBtn.setBackgroundColor(primary);
         playBtn.setPadding(dip2px(12), dip2px(8), dip2px(12), dip2px(8));
         LinearLayout.LayoutParams playLp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -158,7 +173,7 @@ public class ChatActivity extends Activity {
         TextView stateText = new TextView(this);
         stateText.setText("点击开始播放白噪音");
         stateText.setTextSize(12);
-        stateText.setTextColor(Color.parseColor("#CCCCCC"));
+        stateText.setTextColor(textSub);
         stateText.setGravity(Gravity.CENTER_VERTICAL);
         stateText.setPadding(dip2px(12), 0, 0, 0);
         stateText.setId(View.generateViewId());
@@ -174,7 +189,8 @@ public class ChatActivity extends Activity {
         LinearLayout inputBar = new LinearLayout(this);
         inputBar.setOrientation(LinearLayout.HORIZONTAL);
         inputBar.setGravity(Gravity.CENTER_VERTICAL);
-        inputBar.setBackgroundColor(Color.parseColor("#1a1a1a"));
+        inputBar.setBackgroundColor(dark ? Color.parseColor("#1a1a1a")
+                : Color.parseColor("#F0F0F0"));
         inputBar.setPadding(dip2px(8), dip2px(8), dip2px(8), dip2px(8));
         LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -183,9 +199,9 @@ public class ChatActivity extends Activity {
         final EditText input = new EditText(this);
         input.setHint("说点什么...");
         input.setTextSize(14);
-        input.setTextColor(Color.WHITE);
-        input.setHintTextColor(Color.parseColor("#777777"));
-        input.setBackgroundColor(Color.parseColor("#2a2a2a"));
+        input.setTextColor(textMain);
+        input.setHintTextColor(textSub);
+        input.setBackgroundColor(inputBg);
         input.setPadding(dip2px(12), dip2px(8), dip2px(12), dip2px(8));
         LinearLayout.LayoutParams inputLp = new LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
@@ -196,7 +212,7 @@ public class ChatActivity extends Activity {
         sendBtn.setText("发送");
         sendBtn.setTextSize(14);
         sendBtn.setTextColor(Color.WHITE);
-        sendBtn.setBackgroundColor(Color.parseColor("#07C160"));
+        sendBtn.setBackgroundColor(primary);
         sendBtn.setPadding(dip2px(14), dip2px(8), dip2px(14), dip2px(8));
         LinearLayout.LayoutParams sendLp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -219,15 +235,12 @@ public class ChatActivity extends Activity {
         bgRoot.addView(main);
         setContentView(bgRoot);
 
-        // 初始化背景动画
-        startBgAnimation();
-
-        // 渲染已有消息
+        // 渲染已有消息（根据主题更新气泡）
         for (SoundStore.Message m : messages) {
             addMessageView(m.text, m.fromUser);
         }
         if (messages.isEmpty()) {
-            // 欢迎消息（系统回复样式）
+            // 欢迎消息
             msgContainer.postDelayed(() -> addMessage("欢迎来到「" + sound.name + "」聊天室，播放白噪音放松一下吧～", false), 300);
         }
 
@@ -236,6 +249,18 @@ public class ChatActivity extends Activity {
             togglePlay();
             playBtn.setText(isPlaying ? "⏸ 暂停" : "▶ 播放");
         }, 400);
+    }
+
+    // 判断当前主题是否深色
+    private static boolean isDarkMode(Activity ctx) {
+        int mode = ctx.getSharedPreferences("whitenoise_settings", MODE_PRIVATE)
+            .getInt("theme_mode", 0);
+        if (mode == 1) return false; // 浅色
+        if (mode == 2) return true;  // 深色
+        // 跟随系统
+        int uiMode = ctx.getResources().getConfiguration().uiMode
+            & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+        return uiMode == android.content.res.Configuration.UI_MODE_NIGHT_YES;
     }
 
     private String buildAutoReply(String userText, String soundName) {
@@ -272,6 +297,14 @@ public class ChatActivity extends Activity {
     }
 
     private void addMessageView(String text, boolean fromUser) {
+        final boolean dark = isDarkMode(this);
+        final int botBubbleBg = dark ? Color.parseColor("#3a3a3a")
+                : Color.WHITE;
+        final int botText = dark ? Color.WHITE : Color.BLACK;
+        final int avatarBg = dark ? Color.parseColor("#333333")
+                : Color.parseColor("#E8E8E8");
+        final int avatarText = dark ? Color.WHITE : Color.parseColor("#333333");
+
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(fromUser ? Gravity.RIGHT : Gravity.LEFT);
@@ -287,7 +320,7 @@ public class ChatActivity extends Activity {
             avatar.setText("🔊");
             avatar.setTextSize(18);
             avatar.setGravity(Gravity.CENTER);
-            avatar.setBackgroundColor(Color.parseColor("#333333"));
+            avatar.setBackgroundColor(avatarBg);
             LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(
                 dip2px(34), dip2px(34));
             alp.rightMargin = dip2px(8);
@@ -299,7 +332,7 @@ public class ChatActivity extends Activity {
         TextView bubble = new TextView(this);
         bubble.setText(text);
         bubble.setTextSize(14);
-        bubble.setTextColor(Color.WHITE);
+        bubble.setTextColor(fromUser ? Color.WHITE : botText);
         bubble.setPadding(dip2px(12), dip2px(8), dip2px(12), dip2px(8));
         int maxW = (int) (getResources().getDisplayMetrics().widthPixels * 0.7);
         LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
@@ -312,7 +345,7 @@ public class ChatActivity extends Activity {
         if (fromUser) {
             bubbleBg.setColor(Color.parseColor("#07C160"));
         } else {
-            bubbleBg.setColor(Color.parseColor("#3a3a3a"));
+            bubbleBg.setColor(botBubbleBg);
         }
         bubbleBg.setCornerRadius(dip2px(8));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
@@ -327,9 +360,9 @@ public class ChatActivity extends Activity {
             TextView avatar = new TextView(this);
             avatar.setText("我");
             avatar.setTextSize(12);
-            avatar.setTextColor(Color.WHITE);
+            avatar.setTextColor(avatarText);
             avatar.setGravity(Gravity.CENTER);
-            avatar.setBackgroundColor(Color.parseColor("#444444"));
+            avatar.setBackgroundColor(avatarBg);
             LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(
                 dip2px(34), dip2px(34));
             alp.leftMargin = dip2px(8);
