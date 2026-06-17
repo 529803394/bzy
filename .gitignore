@@ -13,6 +13,8 @@
 app/build/
 build/
 build2/
+.build_tmp/
+dist/
 out/
 
 # APK/AAR compiled binaries (绝对不能提交)
