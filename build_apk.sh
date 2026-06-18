@@ -24,6 +24,7 @@ echo "[2/7] 链接资源 + 生成 R.java (aapt2 link)..."
 $BUILD_TOOLS/aapt2 link -o "$TMP/resources.apk" \
     --manifest "$ROOT/app/src/main/AndroidManifest.xml" \
     -I "$PLATFORM/android.jar" \
+    -A "$ROOT/app/src/main/assets" \
     --java "$TMP/gen" --auto-add-overlay "$TMP"/res/*.flat
 
 echo "[3/7] 编译 Java (javac)..."

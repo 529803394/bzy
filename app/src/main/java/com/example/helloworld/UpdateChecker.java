@@ -49,40 +49,44 @@ public class UpdateChecker {
     private static final int READ_TIMEOUT = 10000;
 
     /**
-     * 从 assets/up.txt 读取 UUID，然后去 fars.ee 获取版本信息
+     * 从 assets/up.txt 读取版本信息 URL（GitHub raw），
+     * 再 GET 该 URL 获取 "version:apk_url" 字符串。
+     * 这样，用户只需 push 新的 version.txt 到 git 即完成版本更新。
      */
     public static void check(final Activity ctx, final UpdateCallback callback) {
         new AsyncTask<Void, Void, UpdateInfo>() {
-            private String uuid;
+            private String versionUrl;
 
             @Override
             protected UpdateInfo doInBackground(Void... params) {
                 UpdateInfo info = new UpdateInfo();
-                // 1. 从 assets 读取 UUID
+                // 1. 从 assets 读取版本信息 URL
                 try {
                     InputStream is = ctx.getAssets().open("up.txt");
                     BufferedReader reader = new BufferedReader(new InputStreamReader(is, "UTF-8"));
-                    uuid = reader.readLine();
+                    versionUrl = reader.readLine();
                     reader.close();
                     is.close();
-                    if (uuid == null || uuid.trim().isEmpty()) {
+                    if (versionUrl == null || versionUrl.trim().isEmpty()) {
                         info.errorMessage = "up.txt 为空或格式错误";
                         return info;
                     }
-                    uuid = uuid.trim();
+                    versionUrl = versionUrl.trim();
                 } catch (Exception e) {
                     info.errorMessage = "无法读取 up.txt: " + e.getMessage();
                     return info;
                 }
 
-                // 2. 从 fars.ee 获取内容
+                // 2. 从该 URL 获取版本信息 "version:apk_url"
                 String raw = null;
                 try {
-                    URL url = new URL("https://fars.ee/" + uuid);
+                    URL url = new URL(versionUrl);
                     HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                     conn.setConnectTimeout(CONNECT_TIMEOUT);
                     conn.setReadTimeout(READ_TIMEOUT);
                     conn.setRequestMethod("GET");
+                    // GitHub raw 需要 User-Agent
+                    conn.setRequestProperty("User-Agent", "WhiteNoise-Update-Checker");
                     int code = conn.getResponseCode();
                     if (code == 200) {
                         BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"));
