@@ -3,9 +3,12 @@ package com.example.helloworld;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.media.MediaPlayer;
+import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -15,12 +18,16 @@ import android.view.Window;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.InputStream;
 import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -82,9 +89,26 @@ public class ChatActivity extends Activity {
             }
         }
 
-        // 背景根（颜色流动动画放在后面 startBgAnimation）
+        // 背景根（可放背景图片 + 渐变叠加层）
         bgRoot = new FrameLayout(this);
-        bgRoot.setBackgroundColor(dark ? Color.BLACK : Color.parseColor("#F7F7F7"));
+        bgRoot.setBackgroundColor(dark ? Color.parseColor("#121212") : Color.parseColor("#F7F7F7"));
+
+        // 背景图片层（如果设置了自定义背景图片）
+        final ImageView bgImage = new ImageView(this);
+        bgImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        FrameLayout.LayoutParams imgLp = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT);
+        bgImage.setLayoutParams(imgLp);
+        bgImage.setVisibility(View.INVISIBLE);
+        bgRoot.addView(bgImage);
+
+        // 渐变叠加层（放在图片上方、文字区域不透明度最大，边缘渐隐）
+        final View gradOverlay = new View(this);
+        gradOverlay.setLayoutParams(new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT));
+        bgRoot.addView(gradOverlay); // main 会在它后面 addView，成为最顶层
 
         // 主垂直布局
         LinearLayout main = new LinearLayout(this);
@@ -235,8 +259,13 @@ public class ChatActivity extends Activity {
         bgRoot.addView(main);
         setContentView(bgRoot);
 
-        // 初始化背景流动动画
-        startBgAnimation();
+        // 初始化背景流动动画（渐变叠加在图片或纯色背景上）
+        startBgAnimation(gradOverlay, bgImage);
+
+        // 异步加载自定义背景图片
+        if (sound.bgImageUrl != null && !sound.bgImageUrl.isEmpty()) {
+            new LoadBgImageTask(bgImage).execute(sound.bgImageUrl);
+        }
 
         // 渲染已有消息（根据主题更新气泡）
         for (SoundStore.Message m : messages) {
@@ -428,31 +457,46 @@ public class ChatActivity extends Activity {
     // -------- 背景动画（缓慢的颜色渐变流动）--------
     private GradientDrawable bgDrawable;
 
-    private void startBgAnimation() {
+    private void startBgAnimation(final View gradOverlay, final ImageView bgImage) {
         final boolean dark = isDarkMode(this);
         final int[] darkColors = sound.getChatBgColors();        // 2 colors
         final int[] lightColors = sound.getChatBgColorsLight();  // 3 colors
 
-        // 选3个"锚"颜色（为深主题也给3个，让动画有更多对比）
+        // 选3个"锚"颜色
         final int c0, c1, c2;
         if (dark) {
-            c0 = darkColors[0];          // 亮
-            c1 = mixColor(darkColors[0], darkColors[1], 0.5f); // 中间
-            c2 = darkColors[1];          // 暗
+            c0 = darkColors[0];
+            c1 = mixColor(darkColors[0], darkColors[1], 0.5f);
+            c2 = darkColors[1];
         } else {
             c0 = lightColors[0];
             c1 = lightColors[1];
             c2 = lightColors[2];
         }
 
-        bgDrawable = new GradientDrawable(
-            GradientDrawable.Orientation.TL_BR,
-            new int[]{c0, c1, c2, c1});
-        bgDrawable.setGradientType(GradientDrawable.LINEAR_GRADIENT);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-            bgRoot.setBackground(bgDrawable);
+        // 判断是否有自定义背景图片
+        final boolean hasBgImage = (sound.bgImageUrl != null && !sound.bgImageUrl.isEmpty());
+
+        if (hasBgImage) {
+            // 图片模式：渐变两端压暗、中间透明 → 叠加在图片上方
+            final int topDark = mixColor(c0, Color.BLACK, 0.5f);
+            final int botDark = mixColor(c2, Color.BLACK, 0.5f);
+            bgDrawable = new GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{topDark, Color.TRANSPARENT, Color.TRANSPARENT, botDark});
         } else {
-            bgRoot.setBackgroundDrawable(bgDrawable);
+            // 无图片：全不透明渐变
+            bgDrawable = new GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{c0, c1, c2, c1});
+        }
+        bgDrawable.setGradientType(GradientDrawable.LINEAR_GRADIENT);
+
+        // gradOverlay 是 bgRoot 的子 View，背景叠加在图片上方
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            gradOverlay.setBackground(bgDrawable);
+        } else {
+            gradOverlay.setBackgroundDrawable(bgDrawable);
         }
 
         bgAnimStart = System.currentTimeMillis();
@@ -472,22 +516,24 @@ public class ChatActivity extends Activity {
                 long now = System.currentTimeMillis();
                 float t = ((now - bgAnimStart) % 6000) / 6000f;
 
-                // 三角波：0→1→0
                 float phase = t < 0.5f ? t * 2 : (1 - t) * 2;
                 float t2 = (t + 0.33f) % 1.0f;
                 float phase2 = t2 < 0.5f ? t2 * 2 : (1 - t2) * 2;
                 float t3 = (t + 0.66f) % 1.0f;
                 float phase3 = t3 < 0.5f ? t3 * 2 : (1 - t3) * 2;
 
-                // 在三个锚色做循环插值，让颜色缓慢变化
                 int col1 = mixColor(c0, c1, phase);
                 int col2 = mixColor(c1, c2, phase2);
                 int col3 = mixColor(c0, c2, phase3);
 
-                // 流动渐变
-                bgDrawable.setColors(new int[]{col1, col2, col3, col2});
+                if (hasBgImage) {
+                    int td = mixColor(col1, Color.BLACK, 0.5f);
+                    int bd = mixColor(col3, Color.BLACK, 0.5f);
+                    bgDrawable.setColors(new int[]{td, Color.TRANSPARENT, Color.TRANSPARENT, bd});
+                } else {
+                    bgDrawable.setColors(new int[]{col1, col2, col3, col2});
+                }
 
-                // 方向缓慢变化
                 int orientIdx = (int)((now - bgAnimStart) / 4000) % orients.length;
                 bgDrawable.setOrientation(orients[orientIdx]);
 
@@ -495,6 +541,38 @@ public class ChatActivity extends Activity {
             }
         };
         bgHandler.post(bgAnim);
+    }
+
+    // 异步加载背景图片
+    private static class LoadBgImageTask extends AsyncTask<String, Void, Bitmap> {
+        private final ImageView target;
+        LoadBgImageTask(ImageView iv) { this.target = iv; }
+
+        @Override
+        protected Bitmap doInBackground(String... params) {
+            try {
+                URL url = new URL(params[0]);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setDoInput(true);
+                conn.setConnectTimeout(8000);
+                conn.setReadTimeout(8000);
+                conn.connect();
+                InputStream is = conn.getInputStream();
+                Bitmap bmp = BitmapFactory.decodeStream(is);
+                is.close();
+                return bmp;
+            } catch (Exception e) {
+                return null;
+            }
+        }
+
+        @Override
+        protected void onPostExecute(Bitmap result) {
+            if (result != null && target != null) {
+                target.setImageBitmap(result);
+                target.setVisibility(View.VISIBLE);
+            }
+        }
     }
 
     private static int mixColor(int a, int b, float t) {

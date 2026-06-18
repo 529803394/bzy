@@ -47,7 +47,8 @@ public class SoundStore {
         public String id;          // 唯一ID
         public String name;
         public int resId;          // 内置资源ID，0表示自定义
-        public String url;         // 自定义URL
+        public String url;         // 自定义音频URL
+        public String bgImageUrl;  // 自定义背景图片URL（仅自定义白噪音可用）
         public boolean isCustom;
         public boolean isPinned;
         public boolean isDeleted;  // 是否被删除（移到乐库）
@@ -60,6 +61,7 @@ public class SoundStore {
             this.name = name;
             this.resId = resId;
             this.url = null;
+            this.bgImageUrl = null;
             this.isCustom = false;
             this.isPinned = false;
             this.isDeleted = false;
@@ -68,11 +70,12 @@ public class SoundStore {
             this.themeIndex = Math.abs(id.hashCode()) % 5;
         }
 
-        public Sound(String id, String name, String url) {
+        public Sound(String id, String name, String url, String bgImageUrl) {
             this.id = id;
             this.name = name;
             this.resId = 0;
             this.url = url;
+            this.bgImageUrl = bgImageUrl;
             this.isCustom = true;
             this.isPinned = false;
             this.isDeleted = false;
@@ -170,7 +173,9 @@ public class SoundStore {
                         }
                     }
                 } else {
-                    Sound s = new Sound(id, obj.getString("name"), obj.optString("url", ""));
+                    Sound s = new Sound(id, obj.getString("name"),
+                        obj.optString("url", ""),
+                        obj.optString("bgImageUrl", null));
                     s.isPinned = obj.optBoolean("isPinned", false);
                     s.isDeleted = obj.optBoolean("isDeleted", false);
                     s.lastMessage = obj.optString("lastMessage", "");
@@ -189,7 +194,10 @@ public class SoundStore {
                 obj.put("id", s.id);
                 obj.put("name", s.name);
                 obj.put("isBuiltIn", !s.isCustom);
-                if (s.isCustom) obj.put("url", s.url);
+                if (s.isCustom) {
+                    obj.put("url", s.url == null ? "" : s.url);
+                    obj.put("bgImageUrl", s.bgImageUrl == null ? "" : s.bgImageUrl);
+                }
                 obj.put("isPinned", s.isPinned);
                 obj.put("isDeleted", s.isDeleted);
                 obj.put("lastMessage", s.lastMessage == null ? "" : s.lastMessage);
@@ -201,19 +209,20 @@ public class SoundStore {
         } catch (Exception ignored) {}
     }
 
-    public static synchronized void addCustom(Context ctx, String name, String url) {
+    public static synchronized void addCustom(Context ctx, String name, String url, String bgImageUrl) {
         getAll(ctx);
         String id = "custom_" + System.currentTimeMillis();
-        Sound s = new Sound(id, name, url);
+        Sound s = new Sound(id, name, url, bgImageUrl);
         sounds.add(s);
         save(ctx);
     }
 
-    public static synchronized void updateCustom(Context ctx, String id, String name, String url) {
+    public static synchronized void updateCustom(Context ctx, String id, String name, String url, String bgImageUrl) {
         Sound s = findById(ctx, id);
         if (s != null && s.isCustom) {
             s.name = name;
             s.url = url;
+            s.bgImageUrl = bgImageUrl;
             save(ctx);
         }
     }

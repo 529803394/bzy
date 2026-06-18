@@ -981,6 +981,20 @@ public class MainActivity extends Activity {
         urlInput.setLayoutParams(ulp);
         panel.addView(urlInput);
 
+        final EditText bgImgInput = new EditText(this);
+        bgImgInput.setHint("背景图片URL（可选，https://...）");
+        bgImgInput.setTextSize(15);
+        bgImgInput.setTextColor(textMain);
+        bgImgInput.setHintTextColor(textSub);
+        bgImgInput.setBackgroundColor(inputBg);
+        bgImgInput.setPadding(dip2px(12), dip2px(10), dip2px(12), dip2px(10));
+        LinearLayout.LayoutParams bgiLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        bgiLp.topMargin = dip2px(10);
+        bgImgInput.setLayoutParams(bgiLp);
+        panel.addView(bgImgInput);
+
         Button confirm = new Button(this);
         confirm.setText("添加");
         confirm.setTextSize(15);
@@ -993,15 +1007,20 @@ public class MainActivity extends Activity {
         confirm.setOnClickListener(v -> {
             String name = nameInput.getText().toString().trim();
             String url = urlInput.getText().toString().trim();
+            String bgImg = bgImgInput.getText().toString().trim();
             if (name.isEmpty() || url.isEmpty()) {
-                Toast.makeText(MainActivity.this, "请填写完整", Toast.LENGTH_SHORT).show();
+                Toast.makeText(MainActivity.this, "请填写名称和音频URL", Toast.LENGTH_SHORT).show();
                 return;
             }
             if (!url.startsWith("http://") && !url.startsWith("https://")) {
                 Toast.makeText(MainActivity.this, "URL必须是http或https开头", Toast.LENGTH_SHORT).show();
                 return;
             }
-            SoundStore.addCustom(MainActivity.this, name, url);
+            if (!bgImg.isEmpty() && !bgImg.startsWith("http://") && !bgImg.startsWith("https://")) {
+                Toast.makeText(MainActivity.this, "图片URL必须是http或https开头", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            SoundStore.addCustom(MainActivity.this, name, url, bgImg.isEmpty() ? null : bgImg);
             ((ViewGroup) container.getParent()).removeView(container);
             Toast.makeText(MainActivity.this, "已添加: " + name, Toast.LENGTH_SHORT).show();
             refresh();
@@ -1100,8 +1119,24 @@ public class MainActivity extends Activity {
                 url.setText(s.url);
                 url.setTextSize(11);
                 url.setTextColor(textSub);
-                url.setPadding(0, dip2px(4), 0, dip2px(8));
+                url.setPadding(0, dip2px(4), 0, dip2px(2));
                 row.addView(url);
+
+                if (s.bgImageUrl != null && !s.bgImageUrl.isEmpty()) {
+                    TextView bgTag = new TextView(this);
+                    bgTag.setText("🖼 背景图已设置");
+                    bgTag.setTextSize(11);
+                    bgTag.setTextColor(Color.parseColor("#4dd0e1"));
+                    bgTag.setPadding(0, dip2px(2), 0, dip2px(8));
+                    row.addView(bgTag);
+                } else {
+                    TextView bgTag = new TextView(this);
+                    bgTag.setText("无自定义背景");
+                    bgTag.setTextSize(11);
+                    bgTag.setTextColor(dark ? Color.parseColor("#555555") : Color.parseColor("#aaaaaa"));
+                    bgTag.setPadding(0, dip2px(2), 0, dip2px(8));
+                    row.addView(bgTag);
+                }
 
                 LinearLayout btns = new LinearLayout(this);
                 btns.setOrientation(LinearLayout.HORIZONTAL);
@@ -1214,6 +1249,7 @@ public class MainActivity extends Activity {
 
         final EditText urlInput = new EditText(this);
         urlInput.setText(s.url);
+        urlInput.setHint("音频URL (https://...)");
         urlInput.setTextSize(15);
         urlInput.setTextColor(textMain);
         urlInput.setHintTextColor(textSub);
@@ -1225,6 +1261,23 @@ public class MainActivity extends Activity {
         ulp.topMargin = dip2px(10);
         urlInput.setLayoutParams(ulp);
         panel.addView(urlInput);
+
+        final EditText bgImgInput = new EditText(this);
+        bgImgInput.setHint("背景图片URL（可选，https://...）");
+        bgImgInput.setTextSize(15);
+        bgImgInput.setTextColor(textMain);
+        bgImgInput.setHintTextColor(textSub);
+        bgImgInput.setBackgroundColor(inputBg);
+        bgImgInput.setPadding(dip2px(12), dip2px(10), dip2px(12), dip2px(10));
+        if (s.bgImageUrl != null && !s.bgImageUrl.isEmpty()) {
+            bgImgInput.setText(s.bgImageUrl);
+        }
+        LinearLayout.LayoutParams bgiLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        bgiLp.topMargin = dip2px(10);
+        bgImgInput.setLayoutParams(bgiLp);
+        panel.addView(bgImgInput);
 
         Button confirm = new Button(this);
         confirm.setText("保存");
@@ -1238,11 +1291,16 @@ public class MainActivity extends Activity {
         confirm.setOnClickListener(v -> {
             String name = nameInput.getText().toString().trim();
             String url = urlInput.getText().toString().trim();
+            String bgImg = bgImgInput.getText().toString().trim();
             if (name.isEmpty() || url.isEmpty()) {
-                Toast.makeText(MainActivity.this, "请填写完整", Toast.LENGTH_SHORT).show();
+                Toast.makeText(MainActivity.this, "请填写名称和音频URL", Toast.LENGTH_SHORT).show();
                 return;
             }
-            SoundStore.updateCustom(MainActivity.this, itemId, name, url);
+            if (!bgImg.isEmpty() && !bgImg.startsWith("http://") && !bgImg.startsWith("https://")) {
+                Toast.makeText(MainActivity.this, "图片URL必须是http或https开头", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            SoundStore.updateCustom(MainActivity.this, itemId, name, url, bgImg.isEmpty() ? null : bgImg);
             ((ViewGroup) container.getParent()).removeView(container);
             Toast.makeText(MainActivity.this, "已保存", Toast.LENGTH_SHORT).show();
             refresh();
