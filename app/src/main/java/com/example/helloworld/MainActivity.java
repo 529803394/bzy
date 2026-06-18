@@ -628,7 +628,7 @@ public class MainActivity extends Activity {
         ptext.setLayoutParams(ptlp);
 
         TextView uname = new TextView(this);
-        uname.setText("白噪音用户");
+        uname.setText("小白用户");
         uname.setTextSize(19);
         uname.setTextColor(textMain);
         uname.getPaint().setFakeBoldText(true);
