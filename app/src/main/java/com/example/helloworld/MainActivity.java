@@ -18,6 +18,9 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.webkit.WebView;
+import android.webkit.WebSettings;
+import android.webkit.WebViewClient;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -530,11 +533,9 @@ public class MainActivity extends Activity {
         contentArea.addView(sv);
     }
 
-    // -------- 发现页面：建设中 --------
+    // -------- 发现页面：泡泡白噪音 WebView --------
     private void renderDiscover() {
         boolean dark = isDarkMode(this);
-        int textMain = dark ? Color.WHITE : Color.BLACK;
-        int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#999999");
         int bg = dark ? Color.parseColor("#121212") : Color.parseColor("#F7F7F7");
 
         FrameLayout holder = new FrameLayout(this);
@@ -542,38 +543,36 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
         holder.setBackgroundColor(bg);
 
-        LinearLayout center = new LinearLayout(this);
-        center.setOrientation(LinearLayout.VERTICAL);
-        center.setGravity(Gravity.CENTER);
-        FrameLayout.LayoutParams clp2 = new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT);
-        clp2.gravity = Gravity.CENTER;
-        center.setLayoutParams(clp2);
+        WebView webView = new WebView(this);
+        webView.setLayoutParams(new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT));
 
-        TextView icon = new TextView(this);
-        icon.setText("🚧");
-        icon.setTextSize(48);
-        icon.setGravity(Gravity.CENTER);
-        center.addView(icon);
+        WebSettings settings = webView.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setUseWideViewPort(true);
+        settings.setLoadWithOverviewMode(true);
+        settings.setSupportZoom(true);
+        settings.setBuiltInZoomControls(true);
+        settings.setDisplayZoomControls(false);
 
-        TextView t = new TextView(this);
-        t.setText("发现页");
-        t.setTextSize(20);
-        t.setTextColor(textMain);
-        t.setGravity(Gravity.CENTER);
-        t.setPadding(0, dip2px(12), 0, dip2px(8));
-        t.getPaint().setFakeBoldText(true);
-        center.addView(t);
+        // 页面全部在 WebView 内打开，不调用外部浏览器
+        webView.setWebViewClient(new WebViewClient() {
+            @SuppressWarnings("deprecation")
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                return false;
+            }
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest request) {
+                return false;
+            }
+        });
 
-        TextView sub = new TextView(this);
-        sub.setText("正在建设中");
-        sub.setTextSize(14);
-        sub.setTextColor(textSub);
-        sub.setGravity(Gravity.CENTER);
-        center.addView(sub);
+        webView.loadUrl("https://www.ppbzy.com");
 
-        holder.addView(center);
+        holder.addView(webView);
         contentArea.addView(holder);
     }
 
