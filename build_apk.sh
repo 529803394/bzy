@@ -3,7 +3,7 @@ set -e
 # 手动构建 APK（不依赖 Android Studio）
 # 用法: ./build_apk.sh   => 输出到 dist/app-debug.apk
 
-export JAVA_HOME=/root/.local/share/mise/installs/java/11.0.2
+export JAVA_HOME=/root/.local/share/mise/installs/java/17
 export PATH=$JAVA_HOME/bin:$PATH
 export ANDROID_HOME=/opt/android-sdk
 BUILD_TOOLS=$ANDROID_HOME/build-tools/34.0.0

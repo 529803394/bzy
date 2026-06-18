@@ -235,6 +235,9 @@ public class ChatActivity extends Activity {
         bgRoot.addView(main);
         setContentView(bgRoot);
 
+        // 初始化背景流动动画
+        startBgAnimation();
+
         // 渲染已有消息（根据主题更新气泡）
         for (SoundStore.Message m : messages) {
             addMessageView(m.text, m.fromUser);
