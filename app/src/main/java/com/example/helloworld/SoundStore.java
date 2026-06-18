@@ -26,13 +26,21 @@ public class SoundStore {
         {0xFF334155, 0xFF475569}, // 风声: 灰蓝
         {0xFF7c2d12, 0xFFea580c}  // 篝火: 橙红
     };
-    // 更适合做聊天背景的渐变色 (start, end)
+    // 更适合做聊天背景的渐变色 (start, end) — 要高对比、鲜艳，让动画明显
     public static final int[][] CHAT_BG_COLORS = {
-        {0xFF1a2a4a, 0xFF0a1628}, // 雨声
-        {0xFF0a2540, 0xFF164e63}, // 海浪
-        {0xFF0b3d2e, 0xFF064e3b}, // 森林
-        {0xFF1e293b, 0xFF334155}, // 风声
-        {0xFF451a03, 0xFF7c2d12}  // 篝火
+        {0xFF22d3ee, 0xFF0f172a}, // 雨声: 亮青 → 深海
+        {0xFF38bdf8, 0xFF1e40af}, // 海浪: 天空蓝 → 深蓝
+        {0xFF4ade80, 0xFF065f46}, // 森林: 亮绿 → 深林绿
+        {0xFF94a3b8, 0xFF1e293b}, // 风声: 银灰 → 深灰蓝
+        {0xFFfb923c, 0xFF7c2d12}  // 篝火: 亮橙 → 深橙红
+    };
+    // 白天模式用的浅色系(不那么深，让文字更清楚)
+    public static final int[][] CHAT_BG_COLORS_LIGHT = {
+        {0xFFbae6fd, 0xFF7dd3fc, 0xFF0ea5e9}, // 雨声: 浅蓝系
+        {0xFFfef3c7, 0xFFfde68a, 0xFF38bdf8}, // 海浪: 沙金→浅水蓝
+        {0xFFdcfce7, 0xFF86efac, 0xFF16a34a}, // 森林: 浅绿→深绿
+        {0xFFf1f5f9, 0xFFcbd5e1, 0xFF64748b}, // 风声: 浅灰系
+        {0xFFfed7aa, 0xFFfdba74, 0xFFea580c}  // 篝火: 浅橙→深橙
     };
 
     public static class Sound {
@@ -73,14 +81,19 @@ public class SoundStore {
             this.themeIndex = Math.abs(id.hashCode()) % 5;
         }
 
-        public int[] getChatBgColors() {
-            if (isCustom) return CHAT_BG_COLORS[themeIndex];
-            int idx = -1;
+        public int getSoundIndex() {
+            if (isCustom) return Math.abs(id.hashCode()) % 5;
             for (int i = 0; i < DEFAULT_NAMES.length; i++) {
-                if (name.equals(DEFAULT_NAMES[i])) { idx = i; break; }
+                if (name.equals(DEFAULT_NAMES[i])) return i;
             }
-            if (idx < 0) idx = Math.abs(id.hashCode()) % 5;
-            return CHAT_BG_COLORS[idx];
+            return Math.abs(id.hashCode()) % 5;
+        }
+
+        public int[] getChatBgColors() {
+            return CHAT_BG_COLORS[getSoundIndex()];
+        }
+        public int[] getChatBgColorsLight() {
+            return CHAT_BG_COLORS_LIGHT[getSoundIndex()];
         }
     }
 

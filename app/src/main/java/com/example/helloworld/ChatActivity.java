@@ -426,29 +426,72 @@ public class ChatActivity extends Activity {
     }
 
     // -------- 背景动画（缓慢的颜色渐变流动）--------
+    private GradientDrawable bgDrawable;
+
     private void startBgAnimation() {
-        final int[] colors = sound.getChatBgColors();
-        final int colorA = colors[0];
-        final int colorB = colors[1];
+        final boolean dark = isDarkMode(this);
+        final int[] darkColors = sound.getChatBgColors();        // 2 colors
+        final int[] lightColors = sound.getChatBgColorsLight();  // 3 colors
+
+        // 选3个"锚"颜色（为深主题也给3个，让动画有更多对比）
+        final int c0, c1, c2;
+        if (dark) {
+            c0 = darkColors[0];          // 亮
+            c1 = mixColor(darkColors[0], darkColors[1], 0.5f); // 中间
+            c2 = darkColors[1];          // 暗
+        } else {
+            c0 = lightColors[0];
+            c1 = lightColors[1];
+            c2 = lightColors[2];
+        }
+
+        bgDrawable = new GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            new int[]{c0, c1, c2, c1});
+        bgDrawable.setGradientType(GradientDrawable.LINEAR_GRADIENT);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            bgRoot.setBackground(bgDrawable);
+        } else {
+            bgRoot.setBackgroundDrawable(bgDrawable);
+        }
+
         bgAnimStart = System.currentTimeMillis();
         bgHandler = new android.os.Handler();
+        final GradientDrawable.Orientation[] orients = {
+            GradientDrawable.Orientation.TL_BR,
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            GradientDrawable.Orientation.TR_BL,
+            GradientDrawable.Orientation.RIGHT_LEFT,
+            GradientDrawable.Orientation.BR_TL,
+            GradientDrawable.Orientation.BOTTOM_TOP,
+            GradientDrawable.Orientation.BL_TR,
+            GradientDrawable.Orientation.LEFT_RIGHT,
+        };
         bgAnim = new Runnable() {
             @Override public void run() {
                 long now = System.currentTimeMillis();
-                float t = ((now - bgAnimStart) % 8000) / 8000f; // 8秒一个周期
-                // 用三角波让过渡更自然
+                float t = ((now - bgAnimStart) % 6000) / 6000f;
+
+                // 三角波：0→1→0
                 float phase = t < 0.5f ? t * 2 : (1 - t) * 2;
-                int mixed = mixColor(colorA, colorB, phase);
-                // 背景：上下渐变
-                GradientDrawable gd = new GradientDrawable(
-                    GradientDrawable.Orientation.TOP_BOTTOM,
-                    new int[]{mixed, colorB, colorA, mixed});
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-                    bgRoot.setBackground(gd);
-                } else {
-                    bgRoot.setBackgroundDrawable(gd);
-                }
-                bgHandler.postDelayed(this, 200);
+                float t2 = (t + 0.33f) % 1.0f;
+                float phase2 = t2 < 0.5f ? t2 * 2 : (1 - t2) * 2;
+                float t3 = (t + 0.66f) % 1.0f;
+                float phase3 = t3 < 0.5f ? t3 * 2 : (1 - t3) * 2;
+
+                // 在三个锚色做循环插值，让颜色缓慢变化
+                int col1 = mixColor(c0, c1, phase);
+                int col2 = mixColor(c1, c2, phase2);
+                int col3 = mixColor(c0, c2, phase3);
+
+                // 流动渐变
+                bgDrawable.setColors(new int[]{col1, col2, col3, col2});
+
+                // 方向缓慢变化
+                int orientIdx = (int)((now - bgAnimStart) / 4000) % orients.length;
+                bgDrawable.setOrientation(orients[orientIdx]);
+
+                bgHandler.postDelayed(this, 150);
             }
         };
         bgHandler.post(bgAnim);
