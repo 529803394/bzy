@@ -1,15 +1,15 @@
 package com.example.helloworld;
 
 import android.app.Activity;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.graphics.Color;
-import android.graphics.PorterDuff;
 import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.StateListDrawable;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.text.Editable;
-import android.text.TextWatcher;
+import android.os.Environment;
+import android.provider.MediaStore;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -17,24 +17,28 @@ import android.view.Window;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
-import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
 public class MainActivity extends Activity {
 
     public static final int REQ_CHAT = 1001;
+    public static final int REQ_IMPORT_FILE = 1002;
     static final int TAB_HOME = 10001;
     static final int TAB_LIBRARY = 10002;
     static final int TAB_DISCOVER = 10003;
     static final int TAB_ME = 10004;
 
-    private LinearLayout contentArea; // 主内容区
+    private LinearLayout contentArea;
     private int currentTab = TAB_HOME;
 
     // 主题模式常量
@@ -42,24 +46,20 @@ public class MainActivity extends Activity {
     public static final int THEME_LIGHT = 1;
     public static final int THEME_DARK = 2;
 
-    // 读取当前主题模式（持久化）
     static int getThemeMode(Activity ctx) {
         return ctx.getSharedPreferences("whitenoise_settings", MODE_PRIVATE)
                 .getInt("theme_mode", THEME_FOLLOW_SYSTEM);
     }
 
-    // 是否应该用深色主题（考虑跟随系统）
     static boolean isDarkMode(Activity ctx) {
         int mode = getThemeMode(ctx);
         if (mode == THEME_LIGHT) return false;
         if (mode == THEME_DARK) return true;
-        // 跟随系统：检测系统 uiMode
         int uiMode = ctx.getResources().getConfiguration().uiMode
                 & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
         return uiMode == android.content.res.Configuration.UI_MODE_NIGHT_YES;
     }
 
-    // 获取主题名
     static String getThemeName(int mode) {
         if (mode == THEME_LIGHT) return "浅色";
         if (mode == THEME_DARK) return "深色";
@@ -69,8 +69,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
         getWindow().requestFeature(Window.FEATURE_NO_TITLE);
-        // 根据主题模式设置状态栏颜色
         boolean dark = isDarkMode(this);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             getWindow().setStatusBarColor(dark ? Color.parseColor("#1a1a1a")
@@ -87,7 +87,6 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(dark ? Color.parseColor("#121212")
                 : Color.parseColor("#F7F7F7"));
 
-        // 主内容区
         contentArea = new LinearLayout(this);
         contentArea.setOrientation(LinearLayout.VERTICAL);
         FrameLayout.LayoutParams clp = new FrameLayout.LayoutParams(
@@ -115,7 +114,6 @@ public class MainActivity extends Activity {
 
         root.addView(tabBar);
 
-        // 顶部分割线
         View topDiv = new View(this);
         topDiv.setBackgroundColor(dark ? Color.parseColor("#2a2a2a")
                 : Color.parseColor("#E5E5E5"));
@@ -139,7 +137,6 @@ public class MainActivity extends Activity {
             0, LinearLayout.LayoutParams.MATCH_PARENT, 1);
         tab.setLayoutParams(lp);
 
-        // 图标（用简单的圆点表示）
         TextView icon = new TextView(this);
         icon.setTextSize(18);
         icon.setText(getTabIcon(id));
@@ -174,7 +171,6 @@ public class MainActivity extends Activity {
         contentArea.removeAllViews();
         boolean dark = isDarkMode(this);
 
-        // 更新 tab 样式：激活色根据浅/深主题调整
         LinearLayout tabBar = (LinearLayout) ((FrameLayout) contentArea.getParent()).getChildAt(1);
         if (tabBar != null) {
             for (int i = 0; i < tabBar.getChildCount(); i++) {
@@ -191,7 +187,6 @@ public class MainActivity extends Activity {
             }
         }
 
-        // 标题栏
         TextView title = new TextView(this);
         title.setText(getTitleText(id));
         title.setTextSize(17);
@@ -205,14 +200,12 @@ public class MainActivity extends Activity {
                 : Color.parseColor("#F7F7F7"));
         contentArea.addView(title);
 
-        // 标题下方分割线
         View div = new View(this);
         div.setBackgroundColor(dark ? Color.parseColor("#2a2a2a")
                 : Color.parseColor("#E5E5E5"));
         contentArea.addView(div, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dip2px(0.5f)));
 
-        // 内容页面
         if (id == TAB_HOME) renderHome();
         else if (id == TAB_LIBRARY) renderLibrary();
         else if (id == TAB_DISCOVER) renderDiscover();
@@ -272,7 +265,6 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT);
             row.setLayoutParams(rlp);
 
-            // 头像（用渐变色圆表示白噪音的"头像"）
             int[] colors = s.getChatBgColors();
             TextView avatar = new TextView(this);
             avatar.setText(s.name.substring(0, 1));
@@ -290,7 +282,6 @@ public class MainActivity extends Activity {
             avatar.setLayoutParams(avp);
             row.addView(avatar);
 
-            // 右侧信息
             LinearLayout rightWrap = new LinearLayout(this);
             rightWrap.setOrientation(LinearLayout.VERTICAL);
             LinearLayout.LayoutParams rwp = new LinearLayout.LayoutParams(
@@ -298,7 +289,6 @@ public class MainActivity extends Activity {
             rwp.leftMargin = dip2px(12);
             rightWrap.setLayoutParams(rwp);
 
-            // 第一行：名称 + 时间
             LinearLayout row1 = new LinearLayout(this);
             row1.setOrientation(LinearLayout.HORIZONTAL);
             row1.setGravity(Gravity.CENTER_VERTICAL);
@@ -325,7 +315,6 @@ public class MainActivity extends Activity {
             row1.addView(timeLabel);
             rightWrap.addView(row1);
 
-            // 第二行：最后一条消息预览
             TextView msgLabel = new TextView(this);
             String preview = s.lastMessage;
             if (preview == null || preview.isEmpty()) preview = "点击进入聊天";
@@ -342,14 +331,12 @@ public class MainActivity extends Activity {
 
             row.addView(rightWrap);
 
-            // 点击事件：打开聊天播放页
             row.setOnClickListener(v -> {
                 Intent i = new Intent(MainActivity.this, ChatActivity.class);
                 i.putExtra("sound_id", s.id);
                 startActivityForResult(i, REQ_CHAT);
             });
 
-            // 长按：弹出操作菜单（置顶/删除）
             row.setOnLongClickListener(v -> {
                 showSoundMenu(s);
                 return true;
@@ -357,7 +344,6 @@ public class MainActivity extends Activity {
 
             items.addView(row);
 
-            // 分割线
             View line = new View(this);
             line.setBackgroundColor(cardDiv);
             items.addView(line, new LinearLayout.LayoutParams(
@@ -367,7 +353,6 @@ public class MainActivity extends Activity {
         contentArea.addView(sv);
     }
 
-    // 聊天项操作弹窗
     private void showSoundMenu(final SoundStore.Sound s) {
         final boolean dark = isDarkMode(this);
         final int panelBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
@@ -386,11 +371,8 @@ public class MainActivity extends Activity {
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.WRAP_CONTENT);
         plp.gravity = Gravity.BOTTOM;
-        plp.leftMargin = 0;
-        plp.rightMargin = 0;
         panel.setLayoutParams(plp);
 
-        // 标题
         TextView title = new TextView(this);
         title.setText(s.name);
         title.setTextSize(12);
@@ -464,7 +446,6 @@ public class MainActivity extends Activity {
         items.setBackgroundColor(cardBg);
         sv.addView(items);
 
-        // 说明
         TextView tip = new TextView(this);
         tip.setText("点击白噪音将恢复到首页并进入聊天");
         tip.setTextSize(12);
@@ -596,14 +577,13 @@ public class MainActivity extends Activity {
         contentArea.addView(holder);
     }
 
-    // -------- 我页面（包含设置、添加、管理） --------
+    // -------- 我页面 --------
     private void renderMe() {
         boolean dark = isDarkMode(this);
         int textMain = dark ? Color.WHITE : Color.BLACK;
         int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#999999");
         int cardBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
         int pageBg = dark ? Color.parseColor("#121212") : Color.parseColor("#EDEDED");
-        int sepColor = dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#EDEDED");
 
         ScrollView sv = new ScrollView(this);
         sv.setLayoutParams(new LinearLayout.LayoutParams(
@@ -663,16 +643,17 @@ public class MainActivity extends Activity {
         ptext.addView(uacc);
         profile.addView(ptext);
 
-        // 间距
         TextView spacer = new TextView(this);
         spacer.setHeight(dip2px(12));
         container.addView(spacer, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dip2px(12)));
 
-        // 功能列表：设置、添加、管理
+        // 功能列表
         container.addView(makeMenuRow("⚙️", "设置", "主题/后台播放", v -> showSettingsDialog()));
         container.addView(lineSep());
         container.addView(makeMenuRow("➕", "添加白噪音", "添加自定义音频URL", v -> showAddDialog()));
+        container.addView(lineSep());
+        container.addView(makeMenuRow("📥", "导入白噪音", "从备份文件恢复", v -> doImportSounds()));
         container.addView(lineSep());
         container.addView(makeMenuRow("📋", "管理自定义", "修改 / 删除自定义白噪音", v -> showManageDialog()));
 
@@ -745,7 +726,7 @@ public class MainActivity extends Activity {
         return v;
     }
 
-    // -------- 设置弹窗（含主题模式选择） --------
+    // -------- 设置弹窗 --------
     private void showSettingsDialog() {
         final boolean dark = isDarkMode(this);
         final int textMain = dark ? Color.WHITE : Color.BLACK;
@@ -780,7 +761,7 @@ public class MainActivity extends Activity {
         title.setPadding(0, 0, 0, dip2px(10));
         panel.addView(title);
 
-        // -- 主题模式 --
+        // 主题模式
         TextView themeLabel = new TextView(this);
         themeLabel.setText("主题模式");
         themeLabel.setTextSize(14);
@@ -815,7 +796,6 @@ public class MainActivity extends Activity {
                 getSharedPreferences("whitenoise_settings", MODE_PRIVATE)
                     .edit().putInt("theme_mode", mode).apply();
                 ((ViewGroup) container.getParent()).removeView(container);
-                // 刷新当前 activity：重新创建
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
                     MainActivity.this.recreate();
                 } else {
@@ -830,7 +810,6 @@ public class MainActivity extends Activity {
         }
         panel.addView(themeBtns);
 
-        // 显示当前
         TextView themeHint = new TextView(this);
         themeHint.setText("当前: " + getThemeName(currentMode));
         themeHint.setTextSize(11);
@@ -839,7 +818,6 @@ public class MainActivity extends Activity {
         themeHint.setPadding(0, dip2px(6), 0, 0);
         panel.addView(themeHint);
 
-        // 分割线
         View divider = new View(this);
         divider.setBackgroundColor(dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#E5E5E5"));
         LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
@@ -848,7 +826,7 @@ public class MainActivity extends Activity {
         divider.setLayoutParams(dlp);
         panel.addView(divider);
 
-        // -- 后台播放开关 --
+        // 后台播放开关
         LinearLayout bgRow = new LinearLayout(this);
         bgRow.setOrientation(LinearLayout.HORIZONTAL);
         bgRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -889,16 +867,56 @@ public class MainActivity extends Activity {
         bgRow.addView(bgSwitch.getView());
         panel.addView(bgRow);
 
-        // 版本信息
-        TextView ver = new TextView(this);
-        ver.setText("版本: 2.0.0");
+        // 检查更新按钮
+        final TextView ver = new TextView(this);
+        final String currentVer = UpdateChecker.getCurrentVersion(this);
+        ver.setText("当前版本: " + currentVer);
         ver.setTextSize(12);
         ver.setTextColor(textSub);
         ver.setGravity(Gravity.CENTER);
-        ver.setPadding(0, dip2px(16), 0, dip2px(12));
+        ver.setPadding(0, dip2px(12), 0, 0);
         panel.addView(ver);
 
-        // 关闭按钮
+        Button checkUpdate = new Button(this);
+        checkUpdate.setText("🔄 检查更新");
+        checkUpdate.setTextSize(13);
+        checkUpdate.setTextColor(Color.WHITE);
+        checkUpdate.setBackgroundColor(Color.parseColor("#10AEFF"));
+        LinearLayout.LayoutParams cup = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dip2px(38));
+        cup.topMargin = dip2px(6);
+        checkUpdate.setLayoutParams(cup);
+        checkUpdate.setOnClickListener(v -> {
+            checkUpdate.setText("检测中...");
+            checkUpdate.setEnabled(false);
+            UpdateChecker.check(MainActivity.this, new UpdateChecker.UpdateCallback() {
+                @Override
+                public void onResult(UpdateChecker.UpdateInfo info) {
+                    checkUpdate.setText("🔄 检查更新");
+                    checkUpdate.setEnabled(true);
+                    if (info.errorMessage != null) {
+                        Toast.makeText(MainActivity.this, "检查失败: " + info.errorMessage, Toast.LENGTH_SHORT).show();
+                    } else if (info.isUpdateAvailable) {
+                        ver.setText("最新版本: " + info.latestVersion);
+                        UpdateChecker.downloadAndInstall(MainActivity.this, info.downloadUrl);
+                    } else {
+                        ver.setText("已是最新版本: " + currentVer);
+                        Toast.makeText(MainActivity.this, "当前已是最新版本", Toast.LENGTH_SHORT).show();
+                    }
+                }
+            });
+        });
+        panel.addView(checkUpdate);
+
+        // 分割线
+        View divider2 = new View(this);
+        divider2.setBackgroundColor(dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#E5E5E5"));
+        LinearLayout.LayoutParams dlp2 = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dip2px(0.5f));
+        dlp2.topMargin = dip2px(12);
+        divider2.setLayoutParams(dlp2);
+        panel.addView(divider2);
+
         Button close = new Button(this);
         close.setText("关闭");
         close.setTextSize(15);
@@ -907,7 +925,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT);
-        cp.topMargin = dip2px(4);
+        cp.topMargin = dip2px(8);
         close.setLayoutParams(cp);
         close.setOnClickListener(v -> {
             ((ViewGroup) container.getParent()).removeView(container);
@@ -1017,7 +1035,7 @@ public class MainActivity extends Activity {
                 return;
             }
             if (!bgImg.isEmpty() && !bgImg.startsWith("http://") && !bgImg.startsWith("https://")) {
-                Toast.makeText(MainActivity.this, "图片URL必须是http或https开头", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "图片URL必须是http或https开头", Toast.LENGTH_SHORT).show();
                 return;
             }
             SoundStore.addCustom(MainActivity.this, name, url, bgImg.isEmpty() ? null : bgImg);
@@ -1088,6 +1106,23 @@ public class MainActivity extends Activity {
         title.getPaint().setFakeBoldText(true);
         title.setPadding(0, 0, 0, dip2px(14));
         panel.addView(title);
+
+        // 导出按钮
+        if (!customs.isEmpty()) {
+            Button exportBtn = new Button(this);
+            exportBtn.setText("📤 导出全部到下载目录");
+            exportBtn.setTextSize(14);
+            exportBtn.setTextColor(Color.WHITE);
+            exportBtn.setBackgroundColor(Color.parseColor("#10AEFF"));
+            exportBtn.setPadding(dip2px(12), dip2px(8), dip2px(12), dip2px(8));
+            LinearLayout.LayoutParams expLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            expLp.topMargin = dip2px(4);
+            expLp.bottomMargin = dip2px(8);
+            exportBtn.setLayoutParams(expLp);
+            exportBtn.setOnClickListener(v -> doExportSounds());
+            panel.addView(exportBtn);
+        }
 
         if (customs.isEmpty()) {
             TextView empty = new TextView(this);
@@ -1297,7 +1332,7 @@ public class MainActivity extends Activity {
                 return;
             }
             if (!bgImg.isEmpty() && !bgImg.startsWith("http://") && !bgImg.startsWith("https://")) {
-                Toast.makeText(MainActivity.this, "图片URL必须是http或https开头", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "图片URL必须是http或https开头", Toast.LENGTH_SHORT).show();
                 return;
             }
             SoundStore.updateCustom(MainActivity.this, itemId, name, url, bgImg.isEmpty() ? null : bgImg);
@@ -1327,12 +1362,91 @@ public class MainActivity extends Activity {
         root3.addView(container);
     }
 
-    // 从聊天页返回时刷新
+    // -------- 导出自定义白噪音到下载目录 --------
+    private void doExportSounds() {
+        String json = SoundStore.exportAllToJson(this);
+        if (json == null || json.isEmpty()) {
+            Toast.makeText(this, "没有可导出的自定义白噪音", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String fileName = "whitenoise_backup_" + System.currentTimeMillis() + ".json";
+        try {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Downloads.DISPLAY_NAME, fileName);
+            values.put(MediaStore.Downloads.MIME_TYPE, "application/json");
+            values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+
+            Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            if (uri == null) {
+                Toast.makeText(this, "创建文件失败", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            OutputStream os = getContentResolver().openOutputStream(uri);
+            if (os != null) {
+                os.write(json.getBytes("UTF-8"));
+                os.close();
+                Toast.makeText(this, "已导出到下载目录: " + fileName, Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(this, "写入文件失败", Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "导出失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // -------- 导入白噪音：打开文件选择器 --------
+    private void doImportSounds() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/json");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivityForResult(intent, REQ_IMPORT_FILE);
+    }
+
+    // -------- 处理导入：读取文件内容并解析 --------
+    private void doProcessImport(Uri uri) {
+        try {
+            InputStream is = getContentResolver().openInputStream(uri);
+            if (is == null) {
+                Toast.makeText(this, "无法读取文件", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            BufferedReader reader = new BufferedReader(new InputStreamReader(is, "UTF-8"));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                sb.append(line);
+            }
+            reader.close();
+            is.close();
+            String json = sb.toString();
+            int count = SoundStore.importFromJson(this, json);
+            if (count < 0) {
+                Toast.makeText(this, "文件格式错误，无法导入", Toast.LENGTH_SHORT).show();
+            } else if (count == 0) {
+                Toast.makeText(this, "没有可导入的新白噪音（可能已存在）", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "成功导入 " + count + " 个白噪音", Toast.LENGTH_SHORT).show();
+                refresh();
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "导入失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // -------- onActivityResult --------
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQ_CHAT) {
             refresh();
+        } else if (requestCode == REQ_IMPORT_FILE) {
+            if (resultCode == Activity.RESULT_OK && data != null) {
+                Uri uri = data.getData();
+                if (uri != null) {
+                    doProcessImport(uri);
+                }
+            }
         }
     }
 

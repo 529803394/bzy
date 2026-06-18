@@ -256,6 +256,63 @@ public class SoundStore {
         }
     }
 
+    // -------- 导入 / 导出自定义白噪音 --------
+    // 导出：把当前所有自定义白噪音序列化为 JSON 字符串（不含内置）
+    public static String exportAllToJson(Context ctx) {
+        List<SoundStore.Sound> customs = new ArrayList<>();
+        for (Sound s : getAll(ctx)) {
+            if (s.isCustom) customs.add(s);
+        }
+        try {
+            JSONArray arr = new JSONArray();
+            for (Sound s : customs) {
+                JSONObject obj = new JSONObject();
+                obj.put("name", s.name);
+                obj.put("url", s.url == null ? "" : s.url);
+                obj.put("bgImageUrl", s.bgImageUrl == null ? "" : s.bgImageUrl);
+                arr.put(obj);
+            }
+            JSONObject root = new JSONObject();
+            root.put("version", 1);
+            root.put("sounds", arr);
+            return root.toString(2);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    // 导入：从 JSON 字符串批量添加自定义白噪音（已存在的跳过，按 name 判断去重）
+    public static int importFromJson(Context ctx, String json) {
+        try {
+            JSONObject root = new JSONObject(json);
+            JSONArray arr = root.optJSONArray("sounds");
+            if (arr == null || arr.length() == 0) return 0;
+            getAll(ctx); // 确保 sounds 列表已加载
+            int count = 0;
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject obj = arr.getJSONObject(i);
+                String name = obj.optString("name", "").trim();
+                String url = obj.optString("url", "").trim();
+                String bgUrl = obj.optString("bgImageUrl", "").trim();
+                if (name.isEmpty() || url.isEmpty()) continue;
+                // 跳过重复（按 name 判断）
+                boolean exists = false;
+                for (Sound s : sounds) {
+                    if (s.isCustom && s.name.equals(name)) { exists = true; break; }
+                }
+                if (exists) continue;
+                Sound s = new Sound("custom_" + System.currentTimeMillis() + "_" + i,
+                    name, url, bgUrl.isEmpty() ? null : bgUrl);
+                sounds.add(s);
+                count++;
+            }
+            if (count > 0) save(ctx);
+            return count;
+        } catch (Exception e) {
+            return -1; // 解析失败
+        }
+    }
+
     // 消息持久化（每个Sound一个JSON文件）
     public static List<Message> loadMessages(Context ctx, String soundId) {
         List<Message> result = new ArrayList<>();
