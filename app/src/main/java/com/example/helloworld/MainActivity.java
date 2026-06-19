@@ -231,20 +231,6 @@ public class MainActivity extends Activity {
         int cardDiv = dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#EDEDED");
 
         List<SoundStore.Sound> list = SoundStore.getHomeList(this);
-        if (list.isEmpty()) {
-            TextView empty = new TextView(this);
-            empty.setText("暂无聊天，去乐库添加白噪音吧");
-            empty.setTextSize(14);
-            empty.setTextColor(textSub);
-            empty.setGravity(Gravity.CENTER);
-            LinearLayout.LayoutParams elp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.MATCH_PARENT);
-            elp.gravity = Gravity.CENTER;
-            empty.setLayoutParams(elp);
-            contentArea.addView(empty);
-            return;
-        }
 
         ScrollView sv = new ScrollView(this);
         sv.setLayoutParams(new LinearLayout.LayoutParams(
@@ -256,6 +242,93 @@ public class MainActivity extends Activity {
         items.setOrientation(LinearLayout.VERTICAL);
         items.setBackgroundColor(cardBg);
         sv.addView(items);
+
+        // ===== 猜你喜欢 入口卡片 =====
+        LinearLayout recRow = new LinearLayout(this);
+        recRow.setOrientation(LinearLayout.HORIZONTAL);
+        recRow.setGravity(Gravity.CENTER_VERTICAL);
+        recRow.setBackgroundColor(dark ? Color.parseColor("#2a2a3a") : Color.parseColor("#FFF7ED"));
+        recRow.setPadding(dip2px(14), dip2px(16), dip2px(14), dip2px(16));
+        LinearLayout.LayoutParams recLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        recLp.bottomMargin = dip2px(2);
+        recRow.setLayoutParams(recLp);
+
+        TextView recIcon = new TextView(this);
+        recIcon.setText("✨");
+        recIcon.setTextSize(22);
+        recIcon.setGravity(Gravity.CENTER);
+        GradientDrawable recIconBg = new GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            new int[]{Color.parseColor("#f59e0b"), Color.parseColor("#ef4444")});
+        recIconBg.setCornerRadius(dip2px(24));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            recIcon.setBackground(recIconBg);
+        } else {
+            recIcon.setBackgroundDrawable(recIconBg);
+        }
+        LinearLayout.LayoutParams recIconLp = new LinearLayout.LayoutParams(dip2px(48), dip2px(48));
+        recIcon.setLayoutParams(recIconLp);
+        recRow.addView(recIcon);
+
+        LinearLayout recRight = new LinearLayout(this);
+        recRight.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams recRlp = new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        recRlp.leftMargin = dip2px(12);
+        recRight.setLayoutParams(recRlp);
+
+        TextView recTitle = new TextView(this);
+        recTitle.setText("猜你喜欢 · 为你推荐一首白噪音");
+        recTitle.setTextSize(16);
+        recTitle.setTextColor(textMain);
+        recTitle.getPaint().setFakeBoldText(true);
+        recRight.addView(recTitle);
+
+        TextView recDesc = new TextView(this);
+        recDesc.setText("根据当前时间、季节和心情推荐");
+        recDesc.setTextSize(12);
+        recDesc.setTextColor(textSub);
+        recDesc.setPadding(0, dip2px(4), 0, 0);
+        recRight.addView(recDesc);
+        recRow.addView(recRight);
+
+        TextView recArrow = new TextView(this);
+        recArrow.setText("→");
+        recArrow.setTextSize(18);
+        recArrow.setTextColor(Color.parseColor("#f59e0b"));
+        recArrow.setGravity(Gravity.CENTER);
+        recRow.addView(recArrow);
+
+        recRow.setOnClickListener(v -> {
+            Intent i = new Intent(MainActivity.this, RecommendActivity.class);
+            startActivityForResult(i, REQ_CHAT);
+        });
+        items.addView(recRow);
+
+        // 分隔线
+        View recDiv = new View(this);
+        recDiv.setBackgroundColor(cardDiv);
+        items.addView(recDiv, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dip2px(0.5f)));
+
+        if (list.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText("暂无聊天，去乐库添加白噪音吧");
+            empty.setTextSize(14);
+            empty.setTextColor(textSub);
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(0, dip2px(40), 0, 0);
+            LinearLayout.LayoutParams elp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+            elp.gravity = Gravity.CENTER;
+            empty.setLayoutParams(elp);
+            items.addView(empty);
+            contentArea.addView(sv);
+            return;
+        }
 
         for (final SoundStore.Sound s : list) {
             LinearLayout row = new LinearLayout(this);

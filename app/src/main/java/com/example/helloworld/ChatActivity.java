@@ -1,6 +1,8 @@
 package com.example.helloworld;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
@@ -18,7 +20,6 @@ import android.view.Window;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -150,10 +151,111 @@ public class ChatActivity extends Activity {
         title.setLayoutParams(titleLp);
         topBar.addView(title);
 
-        // 右侧占位保持标题居中
-        TextView spacer = new TextView(this);
-        spacer.setWidth(dip2px(60));
-        topBar.addView(spacer);
+        // 右侧：清空 + 转发 按钮
+        LinearLayout actionBar = new LinearLayout(this);
+        actionBar.setOrientation(LinearLayout.HORIZONTAL);
+        actionBar.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams ablp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.MATCH_PARENT);
+        actionBar.setLayoutParams(ablp);
+
+        Button clearBtn = new Button(this);
+        clearBtn.setText("🧹");
+        clearBtn.setTextSize(16);
+        clearBtn.setTextColor(textMain);
+        clearBtn.setBackgroundColor(Color.TRANSPARENT);
+        clearBtn.setPadding(dip2px(8), 0, dip2px(8), 0);
+        clearBtn.setOnClickListener(v -> {
+            if (messages == null || messages.isEmpty()) {
+                Toast.makeText(this, "聊天记录已经是空的了", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            // 二次确认
+            final FrameLayout confirmWrap = new FrameLayout(this);
+            confirmWrap.setBackgroundColor(Color.parseColor("#AA000000"));
+            final FrameLayout.LayoutParams cwLp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT);
+            confirmWrap.setLayoutParams(cwLp);
+
+            LinearLayout panel = new LinearLayout(this);
+            panel.setOrientation(LinearLayout.VERTICAL);
+            panel.setBackgroundColor(dark ? Color.parseColor("#1e1e1e") : Color.parseColor("#FFFFFF"));
+            panel.setPadding(dip2px(20), dip2px(20), dip2px(20), dip2px(20));
+            FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(
+                dip2px(280), FrameLayout.LayoutParams.WRAP_CONTENT);
+            plp.gravity = Gravity.CENTER;
+            panel.setLayoutParams(plp);
+            GradientDrawable pbg = new GradientDrawable();
+            pbg.setColor(dark ? Color.parseColor("#1e1e1e") : Color.parseColor("#FFFFFF"));
+            pbg.setCornerRadius(dip2px(12));
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) panel.setBackground(pbg);
+            else panel.setBackgroundDrawable(pbg);
+
+            TextView ptitle = new TextView(this);
+            ptitle.setText("清空聊天记录？");
+            ptitle.setTextSize(16);
+            ptitle.setTextColor(textMain);
+            ptitle.getPaint().setFakeBoldText(true);
+            panel.addView(ptitle);
+
+            TextView pdesc = new TextView(this);
+            pdesc.setText("此操作不可恢复，所有与「" + sound.name + "」的对话将被移除。");
+            pdesc.setTextSize(13);
+            pdesc.setTextColor(textSub);
+            pdesc.setPadding(0, dip2px(8), 0, dip2px(16));
+            panel.addView(pdesc);
+
+            Button okBtn = new Button(this);
+            okBtn.setText("确认清空");
+            okBtn.setTextSize(14);
+            okBtn.setTextColor(Color.WHITE);
+            okBtn.setBackgroundColor(Color.parseColor("#ef4444"));
+            okBtn.setPadding(dip2px(12), dip2px(10), dip2px(12), dip2px(10));
+            LinearLayout.LayoutParams oklp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            okBtn.setLayoutParams(oklp);
+            okBtn.setOnClickListener(v2 -> {
+                messages.clear();
+                SoundStore.saveMessages(this, soundId, messages);
+                SoundStore.setLastMessage(this, soundId, "");
+                // 重新渲染
+                msgContainer.removeAllViews();
+                // 欢迎消息
+                msgContainer.postDelayed(() -> addMessage("欢迎回到「" + sound.name + "」，聊天记录已清空。", false), 200);
+                ((ViewGroup) confirmWrap.getParent()).removeView(confirmWrap);
+                Toast.makeText(this, "已清空「" + sound.name + "」的聊天记录", Toast.LENGTH_SHORT).show();
+            });
+            panel.addView(okBtn);
+
+            Button cancelBtn = new Button(this);
+            cancelBtn.setText("取消");
+            cancelBtn.setTextSize(14);
+            cancelBtn.setTextColor(textMain);
+            cancelBtn.setBackgroundColor(Color.TRANSPARENT);
+            cancelBtn.setPadding(dip2px(12), dip2px(10), dip2px(12), dip2px(10));
+            LinearLayout.LayoutParams canlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            canlp.topMargin = dip2px(6);
+            cancelBtn.setLayoutParams(canlp);
+            cancelBtn.setOnClickListener(v2 -> ((ViewGroup) confirmWrap.getParent()).removeView(confirmWrap));
+            panel.addView(cancelBtn);
+
+            confirmWrap.addView(panel);
+            bgRoot.addView(confirmWrap);
+        });
+        actionBar.addView(clearBtn);
+
+        Button shareBtn = new Button(this);
+        shareBtn.setText("📤");
+        shareBtn.setTextSize(16);
+        shareBtn.setTextColor(textMain);
+        shareBtn.setBackgroundColor(Color.TRANSPARENT);
+        shareBtn.setPadding(dip2px(8), 0, dip2px(8), 0);
+        shareBtn.setOnClickListener(v -> doShare());
+        actionBar.addView(shareBtn);
+
+        topBar.addView(actionBar);
 
         main.addView(topBar);
 
@@ -606,6 +708,40 @@ public class ChatActivity extends Activity {
     public void onBackPressed() {
         super.onBackPressed();
         finish();
+    }
+
+    private void doShare() {
+        if (messages == null || messages.isEmpty()) {
+            Toast.makeText(this, "还没有聊天内容可以转发", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        // 构建转发文本
+        StringBuilder sb = new StringBuilder();
+        sb.append("【").append(sound.name).append("】").append(" 聊天记录\n");
+        sb.append("--------------------------------\n");
+        for (SoundStore.Message m : messages) {
+            String who = m.fromUser ? "我" : "助手";
+            sb.append("[").append(who).append("] ").append(m.text).append("\n");
+        }
+        String content = sb.toString();
+        // 1) 复制到剪贴板
+        try {
+            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm != null) {
+                ClipData cd = ClipData.newPlainText("聊天记录", content);
+                cm.setPrimaryClip(cd);
+            }
+        } catch (Exception ignored) {}
+        // 2) 通过系统分享面板转发
+        Intent share = new Intent(Intent.ACTION_SEND);
+        share.setType("text/plain");
+        share.putExtra(Intent.EXTRA_SUBJECT, "「" + sound.name + "」聊天记录");
+        share.putExtra(Intent.EXTRA_TEXT, content);
+        try {
+            startActivity(Intent.createChooser(share, "转发到"));
+        } catch (Exception e) {
+            Toast.makeText(this, "聊天记录已复制到剪贴板", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private int dip2px(float dp) {
