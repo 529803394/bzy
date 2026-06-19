@@ -1,1 +1,1 @@
-https://fars.ee/21RX.txt
+https://YOUR_PROJECT.supabase.co/rest/v1/app_version

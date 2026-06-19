@@ -65,3 +65,91 @@ rm -rf "$TMP"
 echo ""
 echo "✅ 构建完成: $DIST/app-debug.apk"
 ls -lh "$DIST/app-debug.apk"
+
+echo ""
+echo "[8/7] 上传 APK 到 fars.ee ..."
+APK_SHORT_CODE=$(curl -fsS -F "file=@$DIST/app-debug.apk" "https://fars.ee/" 2>&1 | grep "^short:" | awk '{print $2}')
+if [ -z "$APK_SHORT_CODE" ]; then
+    echo "⚠️  APK 上传失败，已跳过更新"
+    exit 1
+fi
+APK_URL="https://fars.ee/$APK_SHORT_CODE.apk"
+echo "✅ APK 地址: $APK_URL"
+
+# 从 APK manifest 中提取 versionName
+VERSION_NAME=$($BUILD_TOOLS/aapt dump badging "$DIST/app-debug.apk" 2>/dev/null | grep "versionName=" | head -1 | sed -E "s/.*versionName='([^']*)'.*/\1/")
+if [ -z "$VERSION_NAME" ]; then
+    VERSION_NAME="2.5.0"
+fi
+
+# 读取 assets/up.txt（Supabase REST URL）
+UUID_FILE="$ROOT/app/src/main/assets/up.txt"
+UP_CONTENT=$(cat "$UUID_FILE" 2>/dev/null || true)
+if [ -z "$UP_CONTENT" ]; then
+    echo ""
+    echo "⚠️  up.txt 为空，请先配置 Supabase 项目 URL"
+    echo "   格式: https://xxx.supabase.co/rest/v1/app_version"
+    echo ""
+    echo "=== 当前版本信息 ==="
+    echo "版本: $VERSION_NAME"
+    echo "APK:  $APK_URL"
+    exit 0
+fi
+
+# 构造 Supabase REST URL（查询端点）
+SUPABASE_URL="$UP_CONTENT"
+SUPABASE_KEY="${SUPABASE_SERVICE_KEY:-}"
+
+if [ -z "$SUPABASE_KEY" ]; then
+    echo ""
+    echo "⚠️  环境变量 SUPABASE_SERVICE_KEY 未设置，跳过 Supabase 更新"
+    echo "   如需自动更新，请设置: export SUPABASE_SERVICE_KEY=<service_role_key>"
+    echo "   提示: 在 Supabase 项目设置 -> API 中获取 service_role key"
+    echo ""
+    echo "=== 当前版本信息 ==="
+    echo "版本: $VERSION_NAME"
+    echo "APK:  $APK_URL"
+    echo ""
+    echo "=== Supabase 手动更新命令 ==="
+    echo "curl -X POST \"${SUPABASE_URL}\" \\"
+    echo "  -H \"apikey: <your-service-key>\" \\"
+    echo "  -H \"Authorization: Bearer <your-service-key>\" \\"
+    echo "  -H \"Content-Type: application/json\" \\"
+    echo "  -H \"Prefer: return=representation\" \\"
+    echo "  -d '{\"version\":\"${VERSION_NAME}\",\"apk_url\":\"${APK_URL}\"}'"
+    exit 0
+fi
+
+echo ""
+echo "[9/7] 更新 Supabase (URL: $SUPABASE_URL) ..."
+
+# 先尝试 POST 插入新记录（如果表只有一条，可以用 UPSERT）
+INSERT_RESP=$(curl -fsS -X POST \
+    -H "apikey: $SUPABASE_KEY" \
+    -H "Authorization: Bearer $SUPABASE_KEY" \
+    -H "Content-Type: application/json" \
+    -H "Prefer: return=representation" \
+    -d "{\"version\":\"${VERSION_NAME}\",\"apk_url\":\"${APK_URL}\"}" \
+    "$SUPABASE_URL" 2>&1)
+
+echo "$INSERT_RESP"
+
+if echo "$INSERT_RESP" | grep -q "error"; then
+    echo "⚠️  Supabase 插入失败，尝试 UPSERT ..."
+    # 先获取已有记录
+    EXISTING=$(curl -fsS -X GET \
+        -H "apikey: $SUPABASE_KEY" \
+        -H "Authorization: Bearer $SUPABASE_KEY" \
+        "$SUPABASE_URL?select=id&limit=1&order=id.desc" 2>&1)
+    echo "已有记录: $EXISTING"
+fi
+
+echo ""
+echo "=== 更新完成 ==="
+echo "版本: $VERSION_NAME"
+echo "APK:  $APK_URL"
+
+# 同步更新 version.txt（便于 git 追踪）
+echo "${VERSION_NAME}:${APK_URL}" > "$ROOT/version.txt"
+echo "✅ version.txt 已更新"
+
