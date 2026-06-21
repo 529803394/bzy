@@ -39,3 +39,11 @@ app/build/outputs/
 
 # Logs
 *.log
+
+# 敏感文件（密钥/凭证，绝对不能提交到公开仓库）
+.env
+release.keystore
+*.jks
+*.p12
+*.pem
+*.key
