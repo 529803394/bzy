@@ -1396,6 +1396,8 @@ public class MainActivity extends Activity {
 
         addDetailRow(panel, "名称", s.name, textMain, textSub);
 
+        addDetailRow(panel, "声音ID", s.id, textMain, textSub);
+
         if (s.url != null && !s.url.isEmpty()) {
             addDetailRow(panel, "网络地址", s.url, textMain, textSub);
         }
@@ -1403,6 +1405,21 @@ public class MainActivity extends Activity {
             addDetailRow(panel, "本地路径", s.localPath, textMain, textSub);
             addDetailRow(panel, "文件大小", SoundStore.formatFileSize(s.fileSize), textMain, textSub);
         } else if (s.url != null && !s.url.isEmpty()) {
+            // 远程音乐：先显示占位，后台异步用 HEAD 获取远程文件大小
+            final TextView remoteSizeTv = addDetailRow(panel, "远程文件大小", "正在获取...", textMain, textSub);
+            final String remoteUrl = s.url;
+            new Thread() {
+                @Override public void run() {
+                    final long remoteSize = SoundStore.getRemoteFileSize(remoteUrl);
+                    runOnUiThread(() -> {
+                        if (remoteSize > 0) {
+                            remoteSizeTv.setText(SoundStore.formatFileSize(remoteSize));
+                        } else {
+                            remoteSizeTv.setText("获取失败（服务器未返回 Content-Length）");
+                        }
+                    });
+                }
+            }.start();
             addDetailRow(panel, "播放方式", "通过网络URL直接播放", textMain, textSub);
         }
         if (s.bgImageUrl != null && !s.bgImageUrl.isEmpty()) {
@@ -1432,7 +1449,7 @@ public class MainActivity extends Activity {
         ((ViewGroup) getWindow().getDecorView().findViewById(android.R.id.content)).addView(dialogWrap);
     }
 
-    private void addDetailRow(LinearLayout panel, String label, String value, int textMain, int textSub) {
+    private TextView addDetailRow(LinearLayout panel, String label, String value, int textMain, int textSub) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setPadding(0, dip2px(10), 0, 0);
@@ -1454,6 +1471,7 @@ public class MainActivity extends Activity {
         row.addView(labelTv);
         row.addView(valueTv);
         panel.addView(row);
+        return valueTv;
     }
 
     // 刷新乐库列表（下载/删除后调用）

@@ -4,6 +4,8 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -242,9 +244,21 @@ public class SoundStore {
                         }
                     }
                 } else {
+                    String savedUrl = obj.optString("url", "");
+                    if (savedUrl != null && savedUrl.isEmpty()) savedUrl = null;
+                    String savedBgImage = obj.optString("bgImageUrl", null);
+                    if (savedBgImage != null && savedBgImage.isEmpty()) savedBgImage = null;
                     Sound s = new Sound(id, obj.getString("name"),
-                        obj.optString("url", ""),
-                        obj.optString("bgImageUrl", null));
+                        savedUrl == null ? "" : savedUrl,
+                        savedBgImage);
+                    s.isNetwork = obj.optBoolean("isNetwork", false);
+                    // 兼容旧数据：如果 id 以 "net_" 开头，标记为网络音乐
+                    if (!s.isNetwork && id != null && id.startsWith("net_")) {
+                        s.isNetwork = true;
+                    }
+                    // 如果 isNetwork=true 且 url 为空，把 isCustom 也设为 true
+                    // 这样 save() 时能正确保存 url 字段
+                    if (s.isNetwork) s.isCustom = true;
                     s.localPath = obj.optString("localPath", null);
                     if (s.localPath != null && s.localPath.isEmpty()) s.localPath = null;
                     s.bgImageLocalPath = obj.optString("bgImageLocalPath", null);
@@ -267,7 +281,8 @@ public class SoundStore {
                 obj.put("id", s.id);
                 obj.put("name", s.name);
                 obj.put("isBuiltIn", !s.isCustom);
-                if (s.isCustom) {
+                obj.put("isNetwork", s.isNetwork);
+                if (s.isCustom || s.isNetwork) {
                     obj.put("url", s.url == null ? "" : s.url);
                     obj.put("bgImageUrl", s.bgImageUrl == null ? "" : s.bgImageUrl);
                     obj.put("localPath", s.localPath == null ? "" : s.localPath);
@@ -578,5 +593,33 @@ public class SoundStore {
         if (bytes < 1024) return bytes + " B";
         if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024.0);
         return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
+    }
+
+    // 通过 HTTP HEAD 请求获取远程文件大小（字节），失败返回 -1
+    public static long getRemoteFileSize(String url) {
+        if (url == null || url.isEmpty()) return -1;
+        HttpURLConnection conn = null;
+        try {
+            URL u = new URL(url);
+            conn = (HttpURLConnection) u.openConnection();
+            conn.setRequestMethod("HEAD");
+            conn.setConnectTimeout(8000);
+            conn.setReadTimeout(8000);
+            conn.setRequestProperty("Accept-Encoding", "identity");
+            int code = conn.getResponseCode();
+            if (code >= 200 && code < 300) {
+                long cl = conn.getContentLengthLong();
+                if (cl > 0) return cl;
+                // 兼容部分服务器返回 string 形式的 Content-Length
+                String clStr = conn.getHeaderField("Content-Length");
+                if (clStr != null) {
+                    try { return Long.parseLong(clStr.trim()); } catch (Exception ignored) {}
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (conn != null) try { conn.disconnect(); } catch (Exception ignored) {}
+        }
+        return -1;
     }
 }

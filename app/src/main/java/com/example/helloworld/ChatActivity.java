@@ -563,38 +563,48 @@ public class ChatActivity extends Activity {
             boolean isNetworkSource = false;
             if (sound.localPath != null && !sound.localPath.isEmpty()) {
                 java.io.File localFile = new java.io.File(sound.localPath);
-                if (localFile.exists()) playSource = sound.localPath;
+                if (localFile.exists() && localFile.length() > 0) {
+                    playSource = sound.localPath;
+                }
             }
             if (playSource == null) {
                 if (sound.url != null && !sound.url.isEmpty()) {
                     playSource = sound.url;
                     isNetworkSource = true;
                 } else {
-                    Toast.makeText(this, "播放失败: 未找到音频", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "播放失败: 未找到音频 (sound.url=" + sound.url + ")", Toast.LENGTH_LONG).show();
                     return;
                 }
             }
 
             mediaPlayer.setAudioStreamType(android.media.AudioManager.STREAM_MUSIC);
-            mediaPlayer.setDataSource(playSource);
+            // 网络URL用Uri方式设置数据源，兼容更多Android版本
+            if (isNetworkSource) {
+                mediaPlayer.setDataSource(this, android.net.Uri.parse(playSource));
+            } else {
+                mediaPlayer.setDataSource(playSource);
+            }
             mediaPlayer.setLooping(true);
 
+            final String sourceForLog = playSource;
             if (isNetworkSource) {
                 // 网络源异步准备，避免主线程阻塞
-                final String sourceForToast = playSource;
                 mediaPlayer.setOnPreparedListener(mp -> {
                     try {
                         mp.start();
                         isPlaying = true;
-                    } catch (Exception ignored) {}
+                    } catch (Exception e) {
+                        Toast.makeText(ChatActivity.this, "播放失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    }
                 });
                 mediaPlayer.setOnErrorListener((mp, what, extra) -> {
-                    Toast.makeText(ChatActivity.this, "播放失败: 网络音频加载错误", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(ChatActivity.this, "播放失败: 网络音频加载错误 (what=" + what + ", extra=" + extra + ", url=" + sourceForLog + ")", Toast.LENGTH_LONG).show();
                     isPlaying = false;
+                    try { mp.reset(); } catch (Exception ignored) {}
                     return true;
                 });
                 mediaPlayer.prepareAsync();
-                Toast.makeText(this, "正在加载音频...", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "正在加载音频: " + playSource, Toast.LENGTH_SHORT).show();
             } else {
                 // 本地文件同步准备
                 mediaPlayer.prepare();
@@ -602,11 +612,15 @@ public class ChatActivity extends Activity {
                 isPlaying = true;
             }
         } catch (java.io.IOException e) {
-            Toast.makeText(this, "播放失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            String msg = e.getMessage();
+            Toast.makeText(this, "播放失败: " + (msg == null ? "音频源不可用" : msg), Toast.LENGTH_LONG).show();
             isPlaying = false;
+            try { if (mediaPlayer != null) mediaPlayer.reset(); } catch (Exception ignored) {}
         } catch (Exception e) {
-            Toast.makeText(this, "播放失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            String msg = e.getMessage();
+            Toast.makeText(this, "播放失败: " + (msg == null ? "未知错误" : msg), Toast.LENGTH_LONG).show();
             isPlaying = false;
+            try { if (mediaPlayer != null) mediaPlayer.reset(); } catch (Exception ignored) {}
         }
     }
 
