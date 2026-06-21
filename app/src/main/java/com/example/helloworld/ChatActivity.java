@@ -945,6 +945,125 @@ public class ChatActivity extends Activity {
         return palettes[idx % palettes.length];
     }
 
+    // 显示当前声音详情（名称/类型/声音ID/网络URL/本地路径/背景URL/远程文件大小）
+    private void showSoundDetailDialog() {
+        boolean dark = isDarkMode(this);
+        int textMain = dark ? Color.WHITE : Color.parseColor("#202020");
+        int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#999999");
+        int panelBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
+
+        final FrameLayout dialogWrap = new FrameLayout(this);
+        dialogWrap.setBackgroundColor(Color.parseColor("#88000000"));
+        dialogWrap.setOnClickListener(v -> bgRoot.removeView(dialogWrap));
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setBackgroundColor(panelBg);
+        panel.setPadding(dip2px(24), dip2px(20), dip2px(24), dip2px(20));
+        FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(
+            dip2px(320), FrameLayout.LayoutParams.WRAP_CONTENT);
+        plp.gravity = Gravity.CENTER;
+        panel.setLayoutParams(plp);
+        GradientDrawable pbg = new GradientDrawable();
+        pbg.setColor(panelBg);
+        pbg.setCornerRadius(dip2px(12));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) panel.setBackground(pbg);
+        else panel.setBackgroundDrawable(pbg);
+
+        TextView titleTv = new TextView(this);
+        titleTv.setText("音乐详情");
+        titleTv.setTextSize(16);
+        titleTv.setTextColor(textMain);
+        titleTv.getPaint().setFakeBoldText(true);
+        panel.addView(titleTv);
+
+        // 类型标签
+        String typeLabel;
+        if (sound.isNetwork) typeLabel = "网络音乐";
+        else if (sound.isCustom) typeLabel = "自定义白噪音";
+        else typeLabel = "内置白噪音";
+        addDetailRow(panel, "类型", typeLabel, textMain, textSub);
+
+        addDetailRow(panel, "名称", sound.name, textMain, textSub);
+
+        addDetailRow(panel, "声音ID", sound.id, textMain, textSub);
+
+        if (sound.url != null && !sound.url.isEmpty()) {
+            addDetailRow(panel, "网络地址", sound.url, textMain, textSub);
+        }
+        if (sound.localPath != null && !sound.localPath.isEmpty()) {
+            addDetailRow(panel, "本地路径", sound.localPath, textMain, textSub);
+            addDetailRow(panel, "文件大小", SoundStore.formatFileSize(sound.fileSize), textMain, textSub);
+        } else if (sound.url != null && !sound.url.isEmpty()) {
+            // 远程音乐：异步 HEAD 获取远程文件大小
+            final TextView remoteSizeTv = addDetailRow(panel, "远程文件大小", "正在获取...", textMain, textSub);
+            final String remoteUrl = sound.url;
+            new Thread() {
+                @Override public void run() {
+                    final long remoteSize = SoundStore.getRemoteFileSize(remoteUrl);
+                    runOnUiThread(() -> {
+                        if (remoteSize > 0) {
+                            remoteSizeTv.setText(SoundStore.formatFileSize(remoteSize));
+                        } else {
+                            remoteSizeTv.setText("获取失败（服务器未返回 Content-Length）");
+                        }
+                    });
+                }
+            }.start();
+            addDetailRow(panel, "播放方式", "通过网络URL直接播放", textMain, textSub);
+        }
+        if (sound.bgImageUrl != null && !sound.bgImageUrl.isEmpty()) {
+            addDetailRow(panel, "背景图网络地址", sound.bgImageUrl, textMain, textSub);
+        }
+        if (sound.bgImageLocalPath != null && !sound.bgImageLocalPath.isEmpty()) {
+            addDetailRow(panel, "背景图本地路径", sound.bgImageLocalPath, textMain, textSub);
+        }
+        if (sound.resId > 0) {
+            addDetailRow(panel, "资源ID", "内置资源 (" + sound.resId + ")", textMain, textSub);
+        }
+
+        Button closeBtn = new Button(this);
+        closeBtn.setText("关闭");
+        closeBtn.setTextSize(14);
+        closeBtn.setTextColor(Color.WHITE);
+        closeBtn.setBackgroundColor(Color.parseColor("#07C160"));
+        closeBtn.setPadding(dip2px(12), dip2px(10), dip2px(12), dip2px(10));
+        LinearLayout.LayoutParams btnlp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        btnlp.topMargin = dip2px(16);
+        closeBtn.setLayoutParams(btnlp);
+        closeBtn.setOnClickListener(v -> bgRoot.removeView(dialogWrap));
+        panel.addView(closeBtn);
+
+        dialogWrap.addView(panel);
+        bgRoot.addView(dialogWrap);
+    }
+
+    private TextView addDetailRow(LinearLayout panel, String label, String value, int textMain, int textSub) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dip2px(10), 0, 0);
+        row.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView labelTv = new TextView(this);
+        labelTv.setText(label + "：");
+        labelTv.setTextSize(13);
+        labelTv.setTextColor(textSub);
+        labelTv.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView valueTv = new TextView(this);
+        valueTv.setText(value);
+        valueTv.setTextSize(13);
+        valueTv.setTextColor(textMain);
+        valueTv.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        row.addView(labelTv);
+        row.addView(valueTv);
+        panel.addView(row);
+        return valueTv;
+    }
+
     // 更多菜单（清除历史、分享、生成背景图）
     private void showMoreMenu(View anchor) {
         boolean dark = isDarkMode(this);
@@ -974,7 +1093,7 @@ public class ChatActivity extends Activity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) panel.setBackground(pbg);
         else panel.setBackgroundDrawable(pbg);
 
-        String[] items = new String[] { "🧹  清除历史", "📤  分享", "🖼  生成背景图" };
+        String[] items = new String[] { "📋  详情", "🧹  清除历史", "📤  分享", "🖼  生成背景图" };
         for (int i = 0; i < items.length; i++) {
             TextView tv = new TextView(this);
             tv.setText(items[i]);
@@ -988,8 +1107,9 @@ public class ChatActivity extends Activity {
             final int idx = i;
             tv.setOnClickListener(v -> {
                 bgRoot.removeView(dialogWrap);
-                if (idx == 0) showClearHistoryDialog();
-                else if (idx == 1) doShare();
+                if (idx == 0) showSoundDetailDialog();
+                else if (idx == 1) showClearHistoryDialog();
+                else if (idx == 2) doShare();
                 else showArtDialog();
             });
             panel.addView(tv);
