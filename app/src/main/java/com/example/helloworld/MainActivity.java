@@ -43,6 +43,12 @@ public class MainActivity extends Activity {
 
     private LinearLayout contentArea;
     private int currentTab = TAB_HOME;
+    private boolean libSelectMode = false;
+    private java.util.Set<String> libSelected = new java.util.HashSet<>();
+    // 乐库操作栏按钮（多选删除时需即时刷新状态）
+    private TextView libLeftBtn = null;
+    private TextView libRightBtn = null;
+    private java.util.List<SoundStore.Sound> libLocalList = new java.util.ArrayList<>();
 
     // 主题模式常量
     public static final int THEME_FOLLOW_SYSTEM = 0;
@@ -95,6 +101,7 @@ public class MainActivity extends Activity {
         FrameLayout.LayoutParams clp = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT);
+        clp.bottomMargin = dip2px(56); // 避免被底部 tabBar 遮挡
         contentArea.setLayoutParams(clp);
         root.addView(contentArea);
 
@@ -216,7 +223,7 @@ public class MainActivity extends Activity {
     }
 
     private String getTitleText(int id) {
-        if (id == TAB_HOME) return "微信";
+        if (id == TAB_HOME) return "小白";
         if (id == TAB_LIBRARY) return "乐库";
         if (id == TAB_DISCOVER) return "发现";
         return "我";
@@ -241,6 +248,7 @@ public class MainActivity extends Activity {
         LinearLayout items = new LinearLayout(this);
         items.setOrientation(LinearLayout.VERTICAL);
         items.setBackgroundColor(cardBg);
+        items.setPadding(0, 0, 0, dip2px(20)); // 底部留白避免贴底
         sv.addView(items);
 
         // ===== 猜你喜欢 入口卡片 =====
@@ -463,6 +471,10 @@ public class MainActivity extends Activity {
             ((ViewGroup) container.getParent()).removeView(container);
             refresh();
         }));
+        panel.addView(makeMenuBtn("重命名", v -> {
+            ((ViewGroup) container.getParent()).removeView(container);
+            showRenameDialog(s);
+        }));
         panel.addView(makeMenuBtn("删除", v -> {
             SoundStore.markDeleted(MainActivity.this, s.id, true);
             ((ViewGroup) container.getParent()).removeView(container);
@@ -502,108 +514,1029 @@ public class MainActivity extends Activity {
         return b;
     }
 
-    // -------- 乐库页面 --------
+    // 重命名对话框
+    private void showRenameDialog(final SoundStore.Sound s) {
+        final boolean dark = isDarkMode(this);
+        final int panelBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
+        final int textMain = dark ? Color.WHITE : Color.BLACK;
+        final int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#999999");
+        final int inputBg = dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#F5F5F5");
+
+        final FrameLayout container = new FrameLayout(this);
+        container.setLayoutParams(new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        container.setBackgroundColor(Color.parseColor("#55000000"));
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setBackgroundColor(panelBg);
+        FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        plp.gravity = Gravity.CENTER;
+        plp.leftMargin = dip2px(40);
+        plp.rightMargin = dip2px(40);
+        panel.setLayoutParams(plp);
+        panel.setPadding(dip2px(20), dip2px(20), dip2px(20), dip2px(12));
+
+        TextView title = new TextView(this);
+        title.setText("重命名");
+        title.setTextSize(17);
+        title.setTextColor(textMain);
+        title.getPaint().setFakeBoldText(true);
+        title.setPadding(0, 0, 0, dip2px(14));
+        panel.addView(title);
+
+        final EditText input = new EditText(this);
+        input.setText(s.name);
+        input.setSelection(s.name.length());
+        input.setTextSize(16);
+        input.setTextColor(textMain);
+        input.setBackgroundColor(inputBg);
+        input.setPadding(dip2px(12), dip2px(10), dip2px(12), dip2px(10));
+        input.setSingleLine(true);
+        input.setHint("输入新名字");
+        input.setHintTextColor(textSub);
+        panel.addView(input);
+
+        // 按钮行
+        LinearLayout btnRow = new LinearLayout(this);
+        btnRow.setOrientation(LinearLayout.HORIZONTAL);
+        btnRow.setGravity(Gravity.END);
+        btnRow.setPadding(0, dip2px(14), 0, 0);
+
+        Button cancelBtn = new Button(this);
+        cancelBtn.setText("取消");
+        cancelBtn.setTextSize(15);
+        cancelBtn.setTextColor(textSub);
+        cancelBtn.setBackgroundColor(Color.TRANSPARENT);
+        LinearLayout.LayoutParams cblp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        cblp.rightMargin = dip2px(8);
+        cancelBtn.setLayoutParams(cblp);
+        cancelBtn.setOnClickListener(v -> {
+            ((ViewGroup) container.getParent()).removeView(container);
+        });
+        btnRow.addView(cancelBtn);
+
+        Button okBtn = new Button(this);
+        okBtn.setText("确定");
+        okBtn.setTextSize(15);
+        okBtn.setTextColor(Color.parseColor("#07C160"));
+        okBtn.setBackgroundColor(Color.TRANSPARENT);
+        okBtn.setOnClickListener(v -> {
+            String newName = input.getText().toString().trim();
+            if (newName.isEmpty()) {
+                Toast.makeText(MainActivity.this, "名字不能为空", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            SoundStore.rename(MainActivity.this, s.id, newName);
+            ((ViewGroup) container.getParent()).removeView(container);
+            refresh();
+            Toast.makeText(MainActivity.this, "已重命名", Toast.LENGTH_SHORT).show();
+        });
+        btnRow.addView(okBtn);
+        panel.addView(btnRow);
+
+        container.setOnClickListener(v -> {
+            ((ViewGroup) v.getParent()).removeView(v);
+        });
+        container.addView(panel);
+
+        ViewGroup root = (ViewGroup) getWindow().getDecorView()
+            .findViewById(android.R.id.content);
+        root.addView(container);
+    }
+
+    // 网络音乐列表（从 bzy/list.csv 加载）
+    private java.util.List<SoundStore.Sound> networkList = new java.util.ArrayList<>();
+    // 当前下载中的 id，用于按钮状态
+    private java.util.Set<String> downloadingIds = new java.util.HashSet<>();
+
+    // -------- 乐库页面（支持搜索 + 多选删除 + 网络音乐）--------
     private void renderLibrary() {
         boolean dark = isDarkMode(this);
         int textMain = dark ? Color.WHITE : Color.BLACK;
         int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#999999");
         int cardBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
         int cardDiv = dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#EDEDED");
-        int tipBg = dark ? Color.parseColor("#151515") : Color.parseColor("#F7F7F7");
+        int barBg = dark ? Color.parseColor("#1a1a1a") : Color.parseColor("#F0F0F0");
+        int tagBg = dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#F0F0F0");
+        int tagText = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#999999");
+        int highlightColor = dark ? Color.parseColor("#ffd54f") : Color.parseColor("#f59e0b");
+        int greenColor = Color.parseColor("#07C160");
 
-        List<SoundStore.Sound> list = SoundStore.getLibraryList(this);
+        final List<SoundStore.Sound> localList = SoundStore.getLibraryList(this);
+        libLocalList = localList;
+        // 每次 render 先清空网络列表，重新加载
+        networkList.clear();
 
+        // ===== 顶部操作栏 =====
+        LinearLayout actionBar = new LinearLayout(this);
+        actionBar.setOrientation(LinearLayout.HORIZONTAL);
+        actionBar.setGravity(Gravity.CENTER_VERTICAL);
+        actionBar.setBackgroundColor(barBg);
+        actionBar.setPadding(dip2px(14), 0, dip2px(14), 0);
+        LinearLayout.LayoutParams ablp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dip2px(44));
+        actionBar.setLayoutParams(ablp);
+
+        TextView leftBtn = new TextView(this);
+        leftBtn.setTextSize(14);
+        leftBtn.setTextColor(dark ? Color.parseColor("#4dd0e1") : Color.parseColor("#07C160"));
+        leftBtn.setGravity(Gravity.CENTER_VERTICAL);
+        leftBtn.setPadding(0, dip2px(10), dip2px(14), dip2px(10));
+        LinearLayout.LayoutParams lbp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+
+        TextView rightBtn = new TextView(this);
+        rightBtn.setTextSize(14);
+        rightBtn.setTextColor(Color.parseColor("#999999"));
+        rightBtn.setGravity(Gravity.CENTER);
+        rightBtn.setPadding(dip2px(12), dip2px(6), dip2px(12), dip2px(6));
+        rightBtn.setEnabled(false);
+        libLeftBtn = leftBtn;
+        libRightBtn = rightBtn;
+        LinearLayout.LayoutParams rbp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        rbp.leftMargin = dip2px(8);
+
+        GradientDrawable btnBg = new GradientDrawable();
+        btnBg.setCornerRadius(dip2px(6));
+        btnBg.setColor(Color.parseColor("#22000000"));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            rightBtn.setBackground(btnBg);
+        } else {
+            rightBtn.setBackgroundDrawable(btnBg);
+        }
+
+        View spacer = new View(this);
+        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(0, 0, 1);
+        spacer.setLayoutParams(sp);
+
+        actionBar.addView(leftBtn, lbp);
+        actionBar.addView(spacer);
+        actionBar.addView(rightBtn, rbp);
+        contentArea.addView(actionBar);
+
+        // ===== 搜索框 =====
+        LinearLayout searchBar = new LinearLayout(this);
+        searchBar.setOrientation(LinearLayout.HORIZONTAL);
+        searchBar.setGravity(Gravity.CENTER_VERTICAL);
+        searchBar.setBackgroundColor(cardBg);
+        searchBar.setPadding(dip2px(12), dip2px(10), dip2px(12), dip2px(10));
+        searchBar.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView searchIcon = new TextView(this);
+        searchIcon.setText("🔍");
+        searchIcon.setTextSize(16);
+        searchIcon.setGravity(Gravity.CENTER);
+        searchIcon.setPadding(0, 0, dip2px(8), 0);
+        searchIcon.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        final EditText searchInput = new EditText(this);
+        searchInput.setHint("搜索白噪音名称（雨声、海浪...）");
+        searchInput.setTextSize(15);
+        searchInput.setTextColor(textMain);
+        searchInput.setHintTextColor(textSub);
+        searchInput.setBackgroundColor(Color.TRANSPARENT);
+        searchInput.setSingleLine(true);
+        searchInput.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
+        searchInput.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+
+        final TextView clearBtn = new TextView(this);
+        clearBtn.setText("清除");
+        clearBtn.setTextSize(13);
+        clearBtn.setTextColor(dark ? Color.parseColor("#4dd0e1") : greenColor);
+        clearBtn.setGravity(Gravity.CENTER);
+        clearBtn.setPadding(dip2px(10), 0, 0, 0);
+        clearBtn.setVisibility(View.GONE);
+        clearBtn.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        searchBar.addView(searchIcon);
+        searchBar.addView(searchInput);
+        searchBar.addView(clearBtn);
+
+        View searchDiv = new View(this);
+        searchDiv.setBackgroundColor(cardDiv);
+        searchDiv.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dip2px(0.5f)));
+
+        contentArea.addView(searchBar);
+        contentArea.addView(searchDiv);
+
+        // ===== 列表区 =====
         ScrollView sv = new ScrollView(this);
         sv.setLayoutParams(new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
 
-        LinearLayout items = new LinearLayout(this);
+        final LinearLayout items = new LinearLayout(this);
         items.setOrientation(LinearLayout.VERTICAL);
         items.setBackgroundColor(cardBg);
+        items.setPadding(0, 0, 0, dip2px(20)); // 底部留白避免贴底
         sv.addView(items);
 
-        TextView tip = new TextView(this);
-        tip.setText("点击白噪音将恢复到首页并进入聊天");
-        tip.setTextSize(12);
-        tip.setTextColor(textSub);
-        tip.setGravity(Gravity.CENTER);
-        tip.setPadding(0, dip2px(12), 0, dip2px(12));
-        tip.setBackgroundColor(tipBg);
-        items.addView(tip, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT));
+        // ===== 加载指示器 =====
+        final LinearLayout loadingWrap = new LinearLayout(this);
+        loadingWrap.setOrientation(LinearLayout.HORIZONTAL);
+        loadingWrap.setGravity(Gravity.CENTER);
+        loadingWrap.setPadding(0, dip2px(40), 0, dip2px(20));
+        TextView loadingTv = new TextView(this);
+        loadingTv.setText("正在加载网络音乐列表...");
+        loadingTv.setTextSize(14);
+        loadingTv.setTextColor(textSub);
+        loadingWrap.addView(loadingTv);
+        items.addView(loadingWrap);
 
-        for (final SoundStore.Sound s : list) {
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(dip2px(14), dip2px(14), dip2px(14), dip2px(14));
-            row.setBackgroundColor(cardBg);
-            LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-            row.setLayoutParams(rlp);
+        // ===== 网络音乐分区标题（初始隐藏，等加载完显示）=====
+        final LinearLayout netSectionHeader = new LinearLayout(this);
+        netSectionHeader.setOrientation(LinearLayout.HORIZONTAL);
+        netSectionHeader.setGravity(Gravity.CENTER_VERTICAL);
+        netSectionHeader.setBackgroundColor(tagBg);
+        netSectionHeader.setPadding(dip2px(14), dip2px(8), dip2px(14), dip2px(8));
+        netSectionHeader.setVisibility(View.GONE);
+        netSectionHeader.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        TextView netLabel = new TextView(this);
+        netLabel.setText("🌐 网络音乐");
+        netLabel.setTextSize(13);
+        netLabel.setTextColor(tagText);
+        netLabel.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        final TextView netCount = new TextView(this);
+        netCount.setTextSize(12);
+        netCount.setTextColor(tagText);
+        netSectionHeader.addView(netLabel);
+        netSectionHeader.addView(netCount);
 
-            int[] colors = s.getChatBgColors();
-            TextView avatar = new TextView(this);
-            avatar.setText(s.name.substring(0, 1));
-            avatar.setTextSize(20);
-            avatar.setTextColor(Color.WHITE);
-            avatar.setGravity(Gravity.CENTER);
-            GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR, colors);
-            bg.setCornerRadius(dip2px(24));
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-                avatar.setBackground(bg);
-            } else {
-                avatar.setBackgroundDrawable(bg);
-            }
-            LinearLayout.LayoutParams avp = new LinearLayout.LayoutParams(dip2px(48), dip2px(48));
-            avatar.setLayoutParams(avp);
-            row.addView(avatar);
-
-            LinearLayout rightWrap = new LinearLayout(this);
-            rightWrap.setOrientation(LinearLayout.VERTICAL);
-            LinearLayout.LayoutParams rwp = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
-            rwp.leftMargin = dip2px(12);
-            rightWrap.setLayoutParams(rwp);
-
-            TextView nameLabel = new TextView(this);
-            String tag = s.isCustom ? "(自定义)" : "";
-            String status = s.isDeleted ? "（已从首页移除）" : "";
-            nameLabel.setText(s.name + tag + status);
-            nameLabel.setTextSize(16);
-            nameLabel.setTextColor(textMain);
-            nameLabel.getPaint().setFakeBoldText(true);
-            rightWrap.addView(nameLabel);
-
-            TextView desc = new TextView(this);
-            desc.setText("点击恢复到首页并进入聊天");
-            desc.setTextSize(12);
-            desc.setTextColor(textSub);
-            desc.setPadding(0, dip2px(4), 0, 0);
-            rightWrap.addView(desc);
-
-            row.addView(rightWrap);
-
-            row.setOnClickListener(v -> {
-                if (s.isDeleted) {
-                    SoundStore.markDeleted(MainActivity.this, s.id, false);
+        // ===== 构建列表行（合并本地 + 网络），需在 Thread 之前声明以便引用 =====
+        final Runnable buildRows = new Runnable() {
+            @Override public void run() {
+                items.removeAllViews();
+                // 如果还没加载完，先放加载指示器
+                if (loadingWrap.getParent() == null) {
+                    items.addView(loadingWrap);
+                    if (netSectionHeader.getParent() == null && !networkList.isEmpty()) {
+                        items.addView(netSectionHeader);
+                    }
+                } else {
+                    // 移除旧的 section header 再重新插入
+                    if (netSectionHeader.getParent() != null) {
+                        ((ViewGroup) netSectionHeader.getParent()).removeView(netSectionHeader);
+                    }
+                    if (!networkList.isEmpty()) {
+                        netCount.setText("(" + networkList.size() + ")");
+                        netSectionHeader.setVisibility(View.VISIBLE);
+                        // 找本地列表结尾位置
+                        int insertPos = Math.min(localList.size(), items.getChildCount());
+                        items.addView(netSectionHeader, insertPos);
+                    }
                 }
+
+                String keywordRaw = searchInput.getText() == null ? "" : searchInput.getText().toString();
+                String keyword = keywordRaw.trim().toLowerCase(java.util.Locale.getDefault());
+
+                java.util.List<SoundStore.Sound> localFiltered = new java.util.ArrayList<>();
+                java.util.List<SoundStore.Sound> netFiltered = new java.util.ArrayList<>();
+
+                for (SoundStore.Sound ls : localList) {
+                    if (keyword.isEmpty()) localFiltered.add(ls);
+                    else {
+                        String n = (ls.name == null ? "" : ls.name).toLowerCase(java.util.Locale.getDefault());
+                        String tag = ls.isCustom ? "custom" : "built";
+                        if (n.contains(keyword) || tag.contains(keyword)) localFiltered.add(ls);
+                    }
+                }
+                for (SoundStore.Sound ns : networkList) {
+                    if (keyword.isEmpty()) netFiltered.add(ns);
+                    else {
+                        String n = (ns.name == null ? "" : ns.name).toLowerCase(java.util.Locale.getDefault());
+                        if (n.contains(keyword)) netFiltered.add(ns);
+                    }
+                }
+
+                if (localFiltered.isEmpty() && netFiltered.isEmpty()) {
+                    TextView empty = new TextView(MainActivity.this);
+                    if (keyword.isEmpty()) {
+                        empty.setText("乐库暂无白噪音，回到首页「猜你喜欢」试试吧");
+                    } else {
+                        empty.setText("没有找到和「" + keywordRaw.trim() + "」匹配的白噪音\n试试其他关键字吧");
+                    }
+                    empty.setTextSize(14);
+                    empty.setTextColor(textSub);
+                    empty.setGravity(Gravity.CENTER);
+                    empty.setLineSpacing(0, 1.2f);
+                    empty.setPadding(0, dip2px(60), 0, 0);
+                    empty.setLayoutParams(new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+                    items.addView(empty);
+                    return;
+                }
+
+                // 本地分区标题（搜索时显示）
+                if (!keyword.isEmpty() && !localFiltered.isEmpty()) {
+                    addSectionHeader(items, "本地白噪音", localFiltered.size(), tagBg, tagText);
+                }
+                for (SoundStore.Sound ls : localFiltered) {
+                    addLocalRow(items, ls, textMain, textSub, cardBg, cardDiv, dark, highlightColor, greenColor, keyword, keywordRaw);
+                }
+
+                // 网络分区标题（搜索时显示）
+                if (!keyword.isEmpty() && !netFiltered.isEmpty()) {
+                    addSectionHeader(items, "🌐 网络音乐", netFiltered.size(), tagBg, tagText);
+                }
+                for (SoundStore.Sound ns : netFiltered) {
+                    addNetworkRow(items, ns, textMain, textSub, cardBg, cardDiv, dark, highlightColor, greenColor, keyword, keywordRaw);
+                }
+            }
+        };
+
+        // ===== 异步加载 CSV =====
+        final android.os.Handler uiHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+        new Thread() {
+            @Override public void run() {
+                try {
+                    java.net.URL url = new java.net.URL("https://pic98.oss-cn-beijing.aliyuncs.com/bzy/list.csv");
+                    java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                    conn.setConnectTimeout(10000);
+                    conn.setReadTimeout(10000);
+                    conn.setRequestProperty("Accept-Charset", "UTF-8");
+                    int code = conn.getResponseCode();
+                    if (code == 200) {
+                        java.io.BufferedReader br = new java.io.BufferedReader(
+                            new java.io.InputStreamReader(conn.getInputStream(), "UTF-8"));
+                        String line;
+                        while ((line = br.readLine()) != null) {
+                            line = line.trim();
+                            if (line.isEmpty()) continue;
+                            // 支持两列 name,url 或三列 name,url,bgImageUrl
+                            int firstComma = line.indexOf(',');
+                            if (firstComma > 0) {
+                                String name = line.substring(0, firstComma).trim();
+                                String rest = line.substring(firstComma + 1).trim();
+                                int secondComma = rest.indexOf(',');
+                                String musicUrl;
+                                String bgUrl = null;
+                                if (secondComma > 0) {
+                                    musicUrl = rest.substring(0, secondComma).trim();
+                                    bgUrl = rest.substring(secondComma + 1).trim();
+                                    if (bgUrl.isEmpty()) bgUrl = null;
+                                } else {
+                                    musicUrl = rest;
+                                }
+                                if (!name.isEmpty() && !musicUrl.isEmpty()) {
+                                    SoundStore.Sound s = SoundStore.Sound.fromNetwork(musicUrl, name, bgUrl);
+                                    SoundStore.checkNetworkCache(MainActivity.this, s);
+                                    networkList.add(s);
+                                }
+                            }
+                        }
+                        br.close();
+                    }
+                    conn.disconnect();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+                uiHandler.post(() -> {
+                    loadingWrap.setVisibility(View.GONE);
+                    if (!networkList.isEmpty()) {
+                        netCount.setText("(" + networkList.size() + ")");
+                        netSectionHeader.setVisibility(View.VISIBLE);
+                        items.addView(netSectionHeader, 1); // 插在本地列表之后
+                    }
+                    buildRows.run();
+                });
+            }
+        }.start();
+
+        // ===== 搜索框文本变化监听 =====
+        android.text.TextWatcher tw = new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(android.text.Editable s) {
+                clearBtn.setVisibility((s != null && s.toString().trim().length() > 0) ? View.VISIBLE : View.GONE);
+                libSelected.clear();
+                updateLibraryActionBar(leftBtn, rightBtn, localList);
+                buildRows.run();
+            }
+        };
+        searchInput.addTextChangedListener(tw);
+
+        clearBtn.setOnClickListener(v -> {
+            searchInput.setText("");
+            try { searchInput.requestFocus(); } catch (Throwable ignored) {}
+        });
+
+        // ===== 初始化按钮 =====
+        updateLibraryActionBar(leftBtn, rightBtn, localList);
+
+        leftBtn.setOnClickListener(v -> {
+            libSelectMode = !libSelectMode;
+            if (!libSelectMode) libSelected.clear();
+            updateLibraryActionBar(leftBtn, rightBtn, localList);
+            buildRows.run();
+        });
+
+        rightBtn.setOnClickListener(v -> {
+            if (libSelected.isEmpty()) return;
+            final int count = libSelected.size();
+            new android.app.AlertDialog.Builder(MainActivity.this)
+                .setTitle("确认删除")
+                .setMessage("确定要删除选中的 " + count + " 个白噪音吗？\n（内置白噪音会从首页移除，自定义白噪音将永久删除）")
+                .setPositiveButton("删除", (dialog, which) -> {
+                    SoundStore.bulkDelete(MainActivity.this, libSelected);
+                    Toast.makeText(MainActivity.this, "已删除 " + count + " 个", Toast.LENGTH_SHORT).show();
+                    libSelected.clear();
+                    libSelectMode = false;
+                    items.removeAllViews();
+                    contentArea.removeAllViews();
+                    renderLibrary();
+                })
+                .setNegativeButton("取消", null)
+                .show();
+        });
+
+        contentArea.addView(sv);
+    }
+
+    // 添加分区标题行
+    private void addSectionHeader(LinearLayout items, String title, int count, int bgColor, int textColor) {
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setBackgroundColor(bgColor);
+        header.setPadding(dip2px(14), dip2px(8), dip2px(14), dip2px(8));
+        header.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        TextView tv = new TextView(this);
+        tv.setText(title + " (" + count + ")");
+        tv.setTextSize(13);
+        tv.setTextColor(textColor);
+        header.addView(tv);
+        items.addView(header);
+
+        View line = new View(this);
+        line.setBackgroundColor(Color.parseColor("#EDEDED"));
+        line.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dip2px(0.5f)));
+        items.addView(line);
+    }
+
+    // 添加本地白噪音行
+    private void addLocalRow(LinearLayout items, SoundStore.Sound s,
+            int textMain, int textSub, int cardBg, int cardDiv, boolean dark,
+            int highlightColor, int greenColor,
+            String keyword, String keywordRaw) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dip2px(14), dip2px(14), dip2px(14), dip2px(14));
+        row.setBackgroundColor(cardBg);
+        row.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        if (libSelectMode) {
+            TextView box = makeCheckBox(s, dark, greenColor);
+            row.addView(box);
+            final TextView fb = box;
+            final SoundStore.Sound fs = s;
+            View.OnClickListener toggleListener = new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    if (libSelected.contains(fs.id)) libSelected.remove(fs.id);
+                    else libSelected.add(fs.id);
+                    refreshCheckBox(fb, fs, dark, greenColor);
+                    // 即时刷新按钮状态（显示数量 / 高亮 / 可用性）
+                    if (libLeftBtn != null && libRightBtn != null) {
+                        updateLibraryActionBar(libLeftBtn, libRightBtn, libLocalList);
+                    }
+                }
+            };
+            box.setOnClickListener(toggleListener);
+            row.setOnClickListener(toggleListener);
+        }
+
+        int[] colors = s.getChatBgColors();
+        TextView avatar = new TextView(this);
+        avatar.setText(s.name.substring(0, 1));
+        avatar.setTextSize(20);
+        avatar.setTextColor(Color.WHITE);
+        avatar.setGravity(Gravity.CENTER);
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR, colors);
+        bg.setCornerRadius(dip2px(24));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) avatar.setBackground(bg);
+        else avatar.setBackgroundDrawable(bg);
+        LinearLayout.LayoutParams avp = new LinearLayout.LayoutParams(dip2px(48), dip2px(48));
+        if (libSelectMode) avp.rightMargin = dip2px(12);
+        else avp.leftMargin = 0;
+        avatar.setLayoutParams(avp);
+        row.addView(avatar);
+
+        LinearLayout rightWrap = new LinearLayout(this);
+        rightWrap.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams rwp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        rwp.leftMargin = libSelectMode ? 0 : dip2px(12);
+        rightWrap.setLayoutParams(rwp);
+
+        TextView nameLabel = new TextView(this);
+        String tag = s.isCustom ? "（自定义）" : "";
+        String status = s.isDeleted ? "（已从首页移除）" : "";
+        String fullName = s.name + tag + status;
+        if (!keyword.isEmpty()) {
+            nameLabel.setText(highlightKeyword(fullName, keywordRaw.trim(), highlightColor, textMain));
+        } else {
+            nameLabel.setText(fullName);
+        }
+        nameLabel.setTextSize(16);
+        nameLabel.setTextColor(textMain);
+        nameLabel.getPaint().setFakeBoldText(true);
+        rightWrap.addView(nameLabel);
+
+        TextView desc = new TextView(this);
+        desc.setText(libSelectMode ? "点击选择/取消" : "点击恢复到首页并进入聊天");
+        desc.setTextSize(12);
+        desc.setTextColor(textSub);
+        desc.setPadding(0, dip2px(4), 0, 0);
+        rightWrap.addView(desc);
+        row.addView(rightWrap);
+
+        if (!libSelectMode) {
+            // 长按显示详情菜单（所有类型都支持）
+            row.setOnLongClickListener(v -> {
+                showLibraryItemMenu(v, s);
+                return true;
+            });
+            row.setOnClickListener(v -> {
+                if (s.isDeleted) SoundStore.markDeleted(MainActivity.this, s.id, false);
                 Intent i = new Intent(MainActivity.this, ChatActivity.class);
                 i.putExtra("sound_id", s.id);
                 startActivityForResult(i, REQ_CHAT);
             });
-
-            items.addView(row);
-
-            View line = new View(this);
-            line.setBackgroundColor(cardDiv);
-            items.addView(line, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dip2px(0.5f)));
         }
 
-        contentArea.addView(sv);
+        items.addView(row);
+        View line = new View(this);
+        line.setBackgroundColor(cardDiv);
+        line.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dip2px(0.5f)));
+        items.addView(line);
+    }
+
+    // 添加网络音乐行
+    private void addNetworkRow(LinearLayout items, SoundStore.Sound s,
+            int textMain, int textSub, int cardBg, int cardDiv, boolean dark,
+            int highlightColor, int greenColor,
+            String keyword, String keywordRaw) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dip2px(14), dip2px(12), dip2px(14), dip2px(12));
+        row.setBackgroundColor(cardBg);
+        row.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        // 头像（圆角渐变）
+        int[] colors = s.getChatBgColors();
+        FrameLayout avatarWrap = new FrameLayout(this);
+        LinearLayout.LayoutParams awp = new LinearLayout.LayoutParams(dip2px(48), dip2px(48));
+        avatarWrap.setLayoutParams(awp);
+
+        TextView avatar = new TextView(this);
+        avatar.setText(s.name.substring(0, 1));
+        avatar.setTextSize(20);
+        avatar.setTextColor(Color.WHITE);
+        avatar.setGravity(Gravity.CENTER);
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR, colors);
+        bg.setCornerRadius(dip2px(24));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) avatar.setBackground(bg);
+        else avatar.setBackgroundDrawable(bg);
+        avatar.setLayoutParams(new FrameLayout.LayoutParams(dip2px(48), dip2px(48)));
+        avatarWrap.addView(avatar);
+
+        // 右下角小角标：未下载=🌐，已下载=✓
+        TextView badge = new TextView(this);
+        badge.setTextSize(10);
+        badge.setGravity(Gravity.CENTER);
+        GradientDrawable badgeBg = new GradientDrawable();
+        badgeBg.setShape(GradientDrawable.OVAL);
+        badgeBg.setColor(s.localPath != null ? greenColor : Color.parseColor("#888888"));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) badge.setBackground(badgeBg);
+        else badge.setBackgroundDrawable(badgeBg);
+        badge.setText(s.localPath != null ? "✓" : "🌐");
+        badge.setTextColor(Color.WHITE);
+        FrameLayout.LayoutParams bbp = new FrameLayout.LayoutParams(dip2px(18), dip2px(18));
+        bbp.gravity = Gravity.BOTTOM | Gravity.END;
+        badge.setLayoutParams(bbp);
+        avatarWrap.addView(badge);
+        row.addView(avatarWrap);
+
+        // 右侧文字
+        LinearLayout rightWrap = new LinearLayout(this);
+        rightWrap.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams rwp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        rwp.leftMargin = dip2px(12);
+        rightWrap.setLayoutParams(rwp);
+
+        TextView nameLabel = new TextView(this);
+        if (!keyword.isEmpty()) {
+            nameLabel.setText(highlightKeyword(s.name, keywordRaw.trim(), highlightColor, textMain));
+        } else {
+            nameLabel.setText(s.name);
+        }
+        nameLabel.setTextSize(16);
+        nameLabel.setTextColor(textMain);
+        nameLabel.getPaint().setFakeBoldText(true);
+        rightWrap.addView(nameLabel);
+
+        TextView desc = new TextView(this);
+        if (s.localPath != null) {
+            desc.setText("已下载 · " + SoundStore.formatFileSize(s.fileSize) + " · 长按查看详情");
+        } else {
+            desc.setText("未下载 · 长按下载或查看详情");
+        }
+        desc.setTextSize(12);
+        desc.setTextColor(textSub);
+        desc.setPadding(0, dip2px(4), 0, 0);
+        rightWrap.addView(desc);
+        row.addView(rightWrap);
+
+        // 长按菜单（统一入口，所有类型都支持）
+        row.setOnLongClickListener(v -> {
+            showLibraryItemMenu(v, s);
+            return true;
+        });
+
+        // 点击事件：直接进入聊天（优先用本地缓存，否则 URL 播放），不需要提前下载
+        row.setOnClickListener(v -> {
+            // 确保网络音乐先注册到 SoundStore（或更新已有记录
+            SoundStore.Sound existing = SoundStore.findById(MainActivity.this, s.id);
+            if (existing == null) {
+                SoundStore.addCustom(MainActivity.this, s.id, s.name, s.url, s.bgImageUrl, s.localPath);
+            } else {
+                if (s.url != null) existing.url = s.url;
+                if (s.bgImageUrl != null) existing.bgImageUrl = s.bgImageUrl;
+                if (s.localPath != null) existing.localPath = s.localPath;
+                SoundStore.save(MainActivity.this);
+            }
+            Intent i = new Intent(MainActivity.this, ChatActivity.class);
+            i.putExtra("sound_id", s.id);
+            startActivityForResult(i, REQ_CHAT);
+        });
+
+        items.addView(row);
+        View line = new View(this);
+        line.setBackgroundColor(cardDiv);
+        line.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dip2px(0.5f)));
+        items.addView(line);
+    }
+
+    // 乐库条目长按菜单（所有类型：内置、自定义、网络音乐）
+    private void showLibraryItemMenu(View anchor, final SoundStore.Sound s) {
+        boolean dark = isDarkMode(this);
+        int textMain = dark ? Color.WHITE : Color.parseColor("#202020");
+        int panelBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
+
+        FrameLayout dialogWrap = new FrameLayout(this);
+        dialogWrap.setBackgroundColor(Color.parseColor("#88000000"));
+        dialogWrap.setOnClickListener(v -> ((ViewGroup) dialogWrap.getParent()).removeView(dialogWrap));
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setBackgroundColor(panelBg);
+        FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(dip2px(260), FrameLayout.LayoutParams.WRAP_CONTENT);
+        plp.gravity = Gravity.CENTER;
+        panel.setLayoutParams(plp);
+        GradientDrawable pbg = new GradientDrawable();
+        pbg.setColor(panelBg);
+        pbg.setCornerRadius(dip2px(12));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) panel.setBackground(pbg);
+        else panel.setBackgroundDrawable(pbg);
+
+        // 标题
+        TextView titleTv = new TextView(this);
+        titleTv.setText(s.name);
+        titleTv.setTextSize(16);
+        titleTv.setTextColor(textMain);
+        titleTv.getPaint().setFakeBoldText(true);
+        titleTv.setPadding(dip2px(18), dip2px(16), dip2px(18), dip2px(8));
+        titleTv.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        panel.addView(titleTv);
+
+        // 分隔线
+        View titleDiv = new View(this);
+        titleDiv.setBackgroundColor(dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#EDEDED"));
+        titleDiv.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dip2px(0.5f)));
+        panel.addView(titleDiv);
+
+        // 按类型生成菜单项：详情始终在最前
+        java.util.List<String> menuItems = new java.util.ArrayList<>();
+        menuItems.add("📋  详情");
+        if (s.isNetwork && s.localPath == null) {
+            menuItems.add("⬇  下载到本地");
+        }
+        if (s.localPath != null) {
+            menuItems.add("🗑  删除缓存");
+        }
+        for (int i = 0; i < menuItems.size(); i++) {
+            final String label = menuItems.get(i);
+            TextView tv = new TextView(this);
+            tv.setText(label);
+            tv.setTextSize(15);
+            tv.setTextColor(label.startsWith("🗑") ? Color.parseColor("#ef4444") : textMain);
+            tv.setGravity(Gravity.CENTER_VERTICAL);
+            tv.setPadding(dip2px(18), dip2px(13), dip2px(18), dip2px(13));
+            tv.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+            tv.setOnClickListener(v -> {
+                ((ViewGroup) dialogWrap.getParent()).removeView(dialogWrap);
+                if (label.startsWith("📋")) showLibraryDetailDialog(s);
+                else if (label.startsWith("⬇")) downloadNetSound(s);
+                else if (label.startsWith("🗑")) deleteNetCache(s);
+            });
+            panel.addView(tv);
+
+            if (i < menuItems.size() - 1) {
+                View div = new View(this);
+                div.setBackgroundColor(dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#EDEDED"));
+                div.setLayoutParams(new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dip2px(0.5f)));
+                panel.addView(div);
+            }
+        }
+
+        dialogWrap.addView(panel);
+        ((ViewGroup) getWindow().getDecorView().findViewById(android.R.id.content)).addView(dialogWrap);
+    }
+
+    // 下载网络音乐
+    private void downloadNetSound(final SoundStore.Sound s) {
+        if (downloadingIds.contains(s.id)) {
+            Toast.makeText(this, "正在下载中，请稍候", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        downloadingIds.add(s.id);
+        Toast.makeText(this, "开始下载: " + s.name, Toast.LENGTH_SHORT).show();
+
+        final String soundId = s.id;
+        final String soundUrl = s.url;
+        final String soundName = s.name;
+        final String soundBgUrl = s.bgImageUrl;
+        new android.os.AsyncTask<Void, Integer, java.io.File>() {
+            @Override protected java.io.File doInBackground(Void... params) {
+                try {
+                    java.io.File cacheDir = SoundStore.getNetworkCacheDir(MainActivity.this);
+                    String fileName = SoundStore.getCacheFileName(soundUrl);
+                    java.io.File outFile = new java.io.File(cacheDir, fileName);
+                    java.io.FileOutputStream fos = new java.io.FileOutputStream(outFile);
+                    java.net.URL url = new java.net.URL(soundUrl);
+                    java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                    conn.setConnectTimeout(15000);
+                    conn.setReadTimeout(30000);
+                    int total = conn.getContentLength();
+                    java.io.InputStream is = conn.getInputStream();
+                    byte[] buf = new byte[8192];
+                    int len;
+                    while ((len = is.read(buf)) != -1) {
+                        fos.write(buf, 0, len);
+                    }
+                    fos.flush();
+                    fos.close();
+                    is.close();
+                    conn.disconnect();
+                    outFile.setReadable(true, false);
+                    s.localPath = outFile.getAbsolutePath();
+                    s.fileSize = outFile.length();
+                    return outFile;
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    return null;
+                }
+            }
+
+            @Override protected void onPostExecute(java.io.File result) {
+                downloadingIds.remove(soundId);
+                if (result != null) {
+                    String localPath = result.getAbsolutePath();
+                    SoundStore.Sound existing = SoundStore.findById(MainActivity.this, soundId);
+                    if (existing == null) {
+                        SoundStore.addCustom(MainActivity.this, soundId, soundName, soundUrl, soundBgUrl, localPath);
+                    } else {
+                        existing.localPath = localPath;
+                        existing.fileSize = result.length();
+                        if (soundBgUrl != null && existing.bgImageUrl == null) {
+                            existing.bgImageUrl = soundBgUrl;
+                        }
+                        SoundStore.save(MainActivity.this);
+                    }
+                    Toast.makeText(MainActivity.this, "下载完成: " + soundName, Toast.LENGTH_SHORT).show();
+                    refreshLibraryList();
+                } else {
+                    Toast.makeText(MainActivity.this, "下载失败，请检查网络: " + soundName, Toast.LENGTH_LONG).show();
+                }
+            }
+        }.execute();
+    }
+
+    // 删除网络音乐缓存
+    private void deleteNetCache(SoundStore.Sound s) {
+        if (s.localPath == null) return;
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("删除缓存")
+            .setMessage("确定删除「" + s.name + "」的本地缓存吗？")
+            .setPositiveButton("删除", (dialog, which) -> {
+                java.io.File f = new java.io.File(s.localPath);
+                if (f.exists()) f.delete();
+                Toast.makeText(this, "已删除缓存: " + s.name, Toast.LENGTH_SHORT).show();
+                refreshLibraryList();
+            })
+            .setNegativeButton("取消", null)
+            .show();
+    }
+
+    // 显示乐库条目详情（名称/网络URL/本地路径/背景URL/背景本地路径）
+    private void showLibraryDetailDialog(SoundStore.Sound s) {
+        boolean dark = isDarkMode(this);
+        int textMain = dark ? Color.WHITE : Color.parseColor("#202020");
+        int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#999999");
+        int panelBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
+
+        FrameLayout dialogWrap = new FrameLayout(this);
+        dialogWrap.setBackgroundColor(Color.parseColor("#88000000"));
+        dialogWrap.setOnClickListener(v -> ((ViewGroup) dialogWrap.getParent()).removeView(dialogWrap));
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setBackgroundColor(panelBg);
+        panel.setPadding(dip2px(24), dip2px(20), dip2px(24), dip2px(20));
+        FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(dip2px(320), FrameLayout.LayoutParams.WRAP_CONTENT);
+        plp.gravity = Gravity.CENTER;
+        panel.setLayoutParams(plp);
+        GradientDrawable pbg = new GradientDrawable();
+        pbg.setColor(panelBg);
+        pbg.setCornerRadius(dip2px(12));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) panel.setBackground(pbg);
+        else panel.setBackgroundDrawable(pbg);
+
+        TextView titleTv = new TextView(this);
+        titleTv.setText("音乐详情");
+        titleTv.setTextSize(16);
+        titleTv.setTextColor(textMain);
+        titleTv.getPaint().setFakeBoldText(true);
+        panel.addView(titleTv);
+
+        // 类型标签
+        String typeLabel;
+        if (s.isNetwork) typeLabel = "网络音乐";
+        else if (s.isCustom) typeLabel = "自定义白噪音";
+        else typeLabel = "内置白噪音";
+        addDetailRow(panel, "类型", typeLabel, textMain, textSub);
+
+        addDetailRow(panel, "名称", s.name, textMain, textSub);
+
+        if (s.url != null && !s.url.isEmpty()) {
+            addDetailRow(panel, "网络地址", s.url, textMain, textSub);
+        }
+        if (s.localPath != null && !s.localPath.isEmpty()) {
+            addDetailRow(panel, "本地路径", s.localPath, textMain, textSub);
+            addDetailRow(panel, "文件大小", SoundStore.formatFileSize(s.fileSize), textMain, textSub);
+        } else if (s.url != null && !s.url.isEmpty()) {
+            addDetailRow(panel, "播放方式", "通过网络URL直接播放", textMain, textSub);
+        }
+        if (s.bgImageUrl != null && !s.bgImageUrl.isEmpty()) {
+            addDetailRow(panel, "背景图网络地址", s.bgImageUrl, textMain, textSub);
+        }
+        if (s.bgImageLocalPath != null && !s.bgImageLocalPath.isEmpty()) {
+            addDetailRow(panel, "背景图本地路径", s.bgImageLocalPath, textMain, textSub);
+        }
+        if (s.resId > 0) {
+            addDetailRow(panel, "资源ID", "内置资源 (" + s.resId + ")", textMain, textSub);
+        }
+
+        Button closeBtn = new Button(this);
+        closeBtn.setText("关闭");
+        closeBtn.setTextSize(14);
+        closeBtn.setTextColor(Color.WHITE);
+        closeBtn.setBackgroundColor(Color.parseColor("#07C160"));
+        closeBtn.setPadding(dip2px(12), dip2px(10), dip2px(12), dip2px(10));
+        LinearLayout.LayoutParams btnlp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        btnlp.topMargin = dip2px(16);
+        closeBtn.setLayoutParams(btnlp);
+        closeBtn.setOnClickListener(v -> ((ViewGroup) dialogWrap.getParent()).removeView(dialogWrap));
+        panel.addView(closeBtn);
+
+        dialogWrap.addView(panel);
+        ((ViewGroup) getWindow().getDecorView().findViewById(android.R.id.content)).addView(dialogWrap);
+    }
+
+    private void addDetailRow(LinearLayout panel, String label, String value, int textMain, int textSub) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dip2px(10), 0, 0);
+        row.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView labelTv = new TextView(this);
+        labelTv.setText(label + "：");
+        labelTv.setTextSize(13);
+        labelTv.setTextColor(textSub);
+        labelTv.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView valueTv = new TextView(this);
+        valueTv.setText(value);
+        valueTv.setTextSize(13);
+        valueTv.setTextColor(textMain);
+        valueTv.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        row.addView(labelTv);
+        row.addView(valueTv);
+        panel.addView(row);
+    }
+
+    // 刷新乐库列表（下载/删除后调用）
+    private void refreshLibraryList() {
+        // 重新检查缓存并刷新
+        for (SoundStore.Sound s : networkList) {
+            SoundStore.checkNetworkCache(this, s);
+        }
+        contentArea.removeAllViews();
+        renderLibrary();
+    }
+
+    // 生成勾选框
+    private TextView makeCheckBox(SoundStore.Sound s, boolean dark, int greenColor) {
+        GradientDrawable boxBg = new GradientDrawable();
+        boxBg.setShape(GradientDrawable.RECTANGLE);
+        boxBg.setCornerRadius(dip2px(6));
+        boxBg.setColor(Color.TRANSPARENT);
+        boxBg.setStroke(dip2px(2), dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#CCCCCC"));
+        TextView box = new TextView(this);
+        box.setText(libSelected.contains(s.id) ? "✓" : "");
+        box.setTextColor(greenColor);
+        box.setTextSize(18);
+        box.setGravity(Gravity.CENTER);
+        box.getPaint().setFakeBoldText(true);
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(dip2px(24), dip2px(24));
+        bp.rightMargin = dip2px(12);
+        box.setLayoutParams(bp);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) box.setBackground(boxBg);
+        else box.setBackgroundDrawable(boxBg);
+        return box;
+    }
+
+    private void refreshCheckBox(TextView box, SoundStore.Sound s, boolean dark, int greenColor) {
+        boolean on = libSelected.contains(s.id);
+        box.setText(on ? "✓" : "");
+        GradientDrawable bg2 = new GradientDrawable();
+        bg2.setShape(GradientDrawable.RECTANGLE);
+        bg2.setCornerRadius(dip2px(6));
+        if (on) {
+            bg2.setColor(greenColor);
+            bg2.setStroke(dip2px(2), greenColor);
+            box.setTextColor(Color.WHITE);
+        } else {
+            bg2.setColor(Color.TRANSPARENT);
+            bg2.setStroke(dip2px(2), dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#CCCCCC"));
+            box.setTextColor(greenColor);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) box.setBackground(bg2);
+        else box.setBackgroundDrawable(bg2);
+    }
+
+    private void updateLibraryActionBar(TextView leftBtn, TextView rightBtn, List<SoundStore.Sound> list) {
+        boolean dark = isDarkMode(this);
+        rightBtn.setVisibility(View.VISIBLE);
+        if (libSelectMode) {
+            leftBtn.setText("取消选择");
+            int n = libSelected.size();
+            if (n > 0) {
+                rightBtn.setText("删除（" + n + "）");
+                rightBtn.setTextColor(Color.parseColor("#FFFFFF"));
+                GradientDrawable bg2 = new GradientDrawable();
+                bg2.setCornerRadius(dip2px(6));
+                bg2.setColor(Color.parseColor("#E53935"));
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) rightBtn.setBackground(bg2);
+                else rightBtn.setBackgroundDrawable(bg2);
+                rightBtn.setEnabled(true);
+            } else {
+                rightBtn.setText("删除");
+                rightBtn.setTextColor(Color.parseColor("#999999"));
+                GradientDrawable bg2 = new GradientDrawable();
+                bg2.setCornerRadius(dip2px(6));
+                bg2.setColor(Color.parseColor("#22000000"));
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) rightBtn.setBackground(bg2);
+                else rightBtn.setBackgroundDrawable(bg2);
+                rightBtn.setEnabled(false);
+            }
+        } else {
+            leftBtn.setText("选择");
+            rightBtn.setText("");
+            rightBtn.setVisibility(View.GONE);
+            rightBtn.setEnabled(false);
+        }
     }
 
     // -------- 发现页面：泡泡白噪音 WebView --------
@@ -664,6 +1597,7 @@ public class MainActivity extends Activity {
 
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(0, 0, 0, dip2px(20)); // 底部留白避免贴底
         sv.addView(container);
 
         // 用户信息卡片
@@ -701,14 +1635,14 @@ public class MainActivity extends Activity {
         ptext.setLayoutParams(ptlp);
 
         TextView uname = new TextView(this);
-        uname.setText("小白用户");
+        uname.setText("小白");
         uname.setTextSize(19);
         uname.setTextColor(textMain);
         uname.getPaint().setFakeBoldText(true);
         ptext.addView(uname);
 
         TextView uacc = new TextView(this);
-        uacc.setText("微信号: whitenoise");
+        uacc.setText("微信号: 小白号");
         uacc.setTextSize(12);
         uacc.setTextColor(textSub);
         uacc.setPadding(0, dip2px(6), 0, 0);
@@ -970,7 +1904,7 @@ public class MainActivity extends Activity {
                         Toast.makeText(MainActivity.this, "检查失败: " + info.errorMessage, Toast.LENGTH_SHORT).show();
                     } else if (info.isUpdateAvailable) {
                         ver.setText("最新版本: " + info.latestVersion);
-                        UpdateChecker.downloadAndInstall(MainActivity.this, info.downloadUrl);
+                        UpdateChecker.openDownload(MainActivity.this, info.downloadUrl);
                     } else {
                         ver.setText("已是最新版本: " + currentVer);
                         Toast.makeText(MainActivity.this, "当前已是最新版本", Toast.LENGTH_SHORT).show();
@@ -1014,13 +1948,15 @@ public class MainActivity extends Activity {
         root.addView(container);
     }
 
-    // -------- 添加白噪音弹窗 --------
+    // -------- 添加白噪音弹窗（AI生成音频与背景图）--------
     private void showAddDialog() {
         final boolean dark = isDarkMode(this);
         final int textMain = dark ? Color.WHITE : Color.BLACK;
         final int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#666666");
         final int panelBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
         final int inputBg = dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#F5F5F5");
+        final int btnGreen = Color.parseColor("#07C160");
+        final int btnGray = dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#E0E0E0");
 
         final FrameLayout container = new FrameLayout(this);
         container.setLayoutParams(new FrameLayout.LayoutParams(
@@ -1049,7 +1985,7 @@ public class MainActivity extends Activity {
         panel.addView(title);
 
         final EditText nameInput = new EditText(this);
-        nameInput.setHint("名称");
+        nameInput.setHint("名称（如：雨声、海浪声、咖啡馆）");
         nameInput.setTextSize(15);
         nameInput.setTextColor(textMain);
         nameInput.setHintTextColor(textSub);
@@ -1057,23 +1993,62 @@ public class MainActivity extends Activity {
         nameInput.setPadding(dip2px(12), dip2px(10), dip2px(12), dip2px(10));
         panel.addView(nameInput);
 
-        final EditText urlInput = new EditText(this);
-        urlInput.setHint("音频URL (https://...)");
-        urlInput.setTextSize(15);
+        // URL 行 + AI 搜索按钮
+        LinearLayout urlRow = new LinearLayout(this);
+        urlRow.setOrientation(LinearLayout.HORIZONTAL);
+        urlRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams urp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        urp.topMargin = dip2px(10);
+        urlRow.setLayoutParams(urp);
+
+        final EditText urlInput = new EditText(MainActivity.this);
+        urlInput.setHint("音频URL 或 本地文件路径（可留空）");
+        urlInput.setTextSize(14);
         urlInput.setTextColor(textMain);
         urlInput.setHintTextColor(textSub);
         urlInput.setBackgroundColor(inputBg);
-        urlInput.setPadding(dip2px(12), dip2px(10), dip2px(12), dip2px(10));
-        LinearLayout.LayoutParams ulp = new LinearLayout.LayoutParams(
+        urlInput.setPadding(dip2px(12), dip2px(10), dip2px(8), dip2px(10));
+        LinearLayout.LayoutParams uip = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        urlInput.setLayoutParams(uip);
+
+        final TextView aiSearchBtn = new TextView(MainActivity.this);
+        aiSearchBtn.setText("✨ AI生成");
+        aiSearchBtn.setTextSize(13);
+        aiSearchBtn.setTextColor(Color.WHITE);
+        aiSearchBtn.setGravity(Gravity.CENTER);
+        aiSearchBtn.setPadding(dip2px(10), dip2px(8), dip2px(10), dip2px(8));
+        GradientDrawable searchBg = new GradientDrawable();
+        searchBg.setCornerRadius(dip2px(6));
+        searchBg.setColor(Color.parseColor("#4A90D9"));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) aiSearchBtn.setBackground(searchBg);
+        else aiSearchBtn.setBackgroundDrawable(searchBg);
+        LinearLayout.LayoutParams sbp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, dip2px(36));
+        sbp.leftMargin = dip2px(8);
+        aiSearchBtn.setLayoutParams(sbp);
+
+        urlRow.addView(urlInput);
+        urlRow.addView(aiSearchBtn);
+        panel.addView(urlRow);
+
+        // 搜索状态提示
+        final TextView searchStatus = new TextView(MainActivity.this);
+        searchStatus.setText("");
+        searchStatus.setTextSize(12);
+        searchStatus.setTextColor(textSub);
+        searchStatus.setPadding(0, dip2px(4), 0, 0);
+        LinearLayout.LayoutParams ssLp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT);
-        ulp.topMargin = dip2px(10);
-        urlInput.setLayoutParams(ulp);
-        panel.addView(urlInput);
+        ssLp.topMargin = dip2px(2);
+        searchStatus.setLayoutParams(ssLp);
 
-        final EditText bgImgInput = new EditText(this);
-        bgImgInput.setHint("背景图片URL（可选，https://...）");
-        bgImgInput.setTextSize(15);
+        // 背景图输入
+        final EditText bgImgInput = new EditText(MainActivity.this);
+        bgImgInput.setHint("背景图片URL（可留空，AI生成可自动补全）");
+        bgImgInput.setTextSize(14);
         bgImgInput.setTextColor(textMain);
         bgImgInput.setHintTextColor(textSub);
         bgImgInput.setBackgroundColor(inputBg);
@@ -1083,53 +2058,132 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams.WRAP_CONTENT);
         bgiLp.topMargin = dip2px(10);
         bgImgInput.setLayoutParams(bgiLp);
-        panel.addView(bgImgInput);
 
-        Button confirm = new Button(this);
+        // 按钮行：确认 + 取消
+        LinearLayout btnRow = new LinearLayout(MainActivity.this);
+        btnRow.setOrientation(LinearLayout.HORIZONTAL);
+        btnRow.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams brp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        brp.topMargin = dip2px(16);
+        btnRow.setLayoutParams(brp);
+
+        Button confirm = new Button(MainActivity.this);
         confirm.setText("添加");
         confirm.setTextSize(15);
         confirm.setTextColor(Color.WHITE);
-        confirm.setBackgroundColor(Color.parseColor("#07C160"));
-        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dip2px(44));
-        cp.topMargin = dip2px(16);
+        confirm.setBackgroundColor(btnGreen);
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(0, dip2px(44), 1);
         confirm.setLayoutParams(cp);
+
+        Button cancel = new Button(MainActivity.this);
+        cancel.setText("取消");
+        cancel.setTextSize(15);
+        cancel.setTextColor(textSub);
+        cancel.setBackgroundColor(Color.TRANSPARENT);
+        LinearLayout.LayoutParams cap = new LinearLayout.LayoutParams(0, dip2px(44), 1);
+        cap.leftMargin = dip2px(8);
+        cancel.setLayoutParams(cap);
+
+        btnRow.addView(confirm);
+        btnRow.addView(cancel);
+
+        // AI 搜索逻辑
+        final android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+        aiSearchBtn.setOnClickListener(v -> {
+            final String name = nameInput.getText().toString().trim();
+            if (name.isEmpty()) {
+                Toast.makeText(MainActivity.this, "请先填写白噪音名称", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            // 禁用按钮，显示状态
+            aiSearchBtn.setEnabled(false);
+            aiSearchBtn.setText("生成中...");
+            searchStatus.setText("正在通过 AI 生成音频和背景图...");
+            searchStatus.setTextColor(Color.parseColor("#4A90D9"));
+
+            new Thread(() -> {
+                AI.MediaResult result = AI.searchMedia(MainActivity.this, name);
+                mainHandler.post(() -> {
+                    aiSearchBtn.setEnabled(true);
+                    aiSearchBtn.setText("✨ AI生成");
+                    if (result.error != null && !result.error.isEmpty()
+                        && (result.audioUrl == null || result.audioUrl.isEmpty())) {
+                        searchStatus.setText(result.error);
+                        searchStatus.setTextColor(Color.parseColor("#E53935"));
+                    } else {
+                        if (result.audioUrl != null && !result.audioUrl.isEmpty()) {
+                            urlInput.setText(result.audioUrl);
+                            searchStatus.setText("✅ 已生成音频文件");
+                            searchStatus.setTextColor(Color.parseColor("#07C160"));
+                        }
+                        if (result.bgImageUrl != null && !result.bgImageUrl.isEmpty()) {
+                            bgImgInput.setText(result.bgImageUrl);
+                        }
+                        if (result.audioUrl == null && result.bgImageUrl == null) {
+                            searchStatus.setText("生成失败，请手动填写");
+                            searchStatus.setTextColor(Color.parseColor("#E53935"));
+                        }
+                    }
+                });
+            }).start();
+        });
+
+        // 确认逻辑
         confirm.setOnClickListener(v -> {
             String name = nameInput.getText().toString().trim();
             String url = urlInput.getText().toString().trim();
             String bgImg = bgImgInput.getText().toString().trim();
-            if (name.isEmpty() || url.isEmpty()) {
-                Toast.makeText(MainActivity.this, "请填写名称和音频URL", Toast.LENGTH_SHORT).show();
+            if (name.isEmpty()) {
+                Toast.makeText(MainActivity.this, "请填写名称", Toast.LENGTH_SHORT).show();
                 return;
             }
-            if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                Toast.makeText(MainActivity.this, "URL必须是http或https开头", Toast.LENGTH_SHORT).show();
+            // URL 可空，由 AI 生成补全；如都为空则提示
+            if (url.isEmpty() && bgImg.isEmpty()) {
+                Toast.makeText(MainActivity.this, "请先点击「AI生成」获取音频，或手动填写", Toast.LENGTH_SHORT).show();
                 return;
             }
-            if (!bgImg.isEmpty() && !bgImg.startsWith("http://") && !bgImg.startsWith("https://")) {
-                Toast.makeText(this, "图片URL必须是http或https开头", Toast.LENGTH_SHORT).show();
+            if (!url.isEmpty()
+                && !url.startsWith("http://") && !url.startsWith("https://")
+                && !url.startsWith("/") && !url.startsWith("file://")) {
+                Toast.makeText(MainActivity.this, "音频必须是 URL 或 本地文件绝对路径", Toast.LENGTH_SHORT).show();
                 return;
             }
-            SoundStore.addCustom(MainActivity.this, name, url, bgImg.isEmpty() ? null : bgImg);
+            if (!bgImg.isEmpty()
+                && !bgImg.startsWith("http://") && !bgImg.startsWith("https://")
+                && !bgImg.startsWith("/") && !bgImg.startsWith("file://")) {
+                Toast.makeText(MainActivity.this, "图片必须是 URL 或 本地文件绝对路径", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            // 区分：本地文件路径 → localPath；网络 → url
+            String newSoundId = "custom_" + System.currentTimeMillis();
+            String urlForCustom = null;
+            String localPathForCustom = null;
+            String bgImgForCustom = bgImg.isEmpty() ? null : bgImg;
+            if (!url.isEmpty()) {
+                if (url.startsWith("http://") || url.startsWith("https://")) {
+                    urlForCustom = url;
+                } else {
+                    localPathForCustom = url;
+                }
+            }
+            SoundStore.addCustom(MainActivity.this, newSoundId, name, urlForCustom, bgImgForCustom);
+            if (localPathForCustom != null) {
+                SoundStore.setLocalPath(MainActivity.this, newSoundId, localPathForCustom);
+            }
             ((ViewGroup) container.getParent()).removeView(container);
             Toast.makeText(MainActivity.this, "已添加: " + name, Toast.LENGTH_SHORT).show();
             refresh();
         });
-        panel.addView(confirm);
 
-        Button cancel = new Button(this);
-        cancel.setText("取消");
-        cancel.setTextSize(15);
-        cancel.setTextColor(Color.parseColor("#666666"));
-        cancel.setBackgroundColor(Color.TRANSPARENT);
-        LinearLayout.LayoutParams cap = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dip2px(44));
-        cap.topMargin = dip2px(6);
-        cancel.setLayoutParams(cap);
         cancel.setOnClickListener(v -> {
             ((ViewGroup) container.getParent()).removeView(container);
         });
-        panel.addView(cancel);
+
+        panel.addView(searchStatus);
+        panel.addView(bgImgInput);
+        panel.addView(btnRow);
 
         container.addView(panel);
         ViewGroup root = (ViewGroup) getWindow().getDecorView()
@@ -1252,6 +2306,36 @@ public class MainActivity extends Activity {
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT);
                 btns.setLayoutParams(btp);
+
+                // 下载按钮（优先显示）
+                Button downloadBtn = new Button(this);
+                final boolean hasLocal = s.localPath != null && !s.localPath.isEmpty()
+                    && new java.io.File(s.localPath).exists();
+                if (hasLocal) {
+                    downloadBtn.setText("✓ 已下载");
+                    downloadBtn.setTextSize(12);
+                    downloadBtn.setTextColor(Color.parseColor("#888888"));
+                    downloadBtn.setBackgroundColor(Color.parseColor("#444444"));
+                } else {
+                    downloadBtn.setText("⬇ 下载");
+                    downloadBtn.setTextSize(12);
+                    downloadBtn.setTextColor(Color.WHITE);
+                    downloadBtn.setBackgroundColor(Color.parseColor("#34C759"));
+                }
+                downloadBtn.setPadding(dip2px(12), dip2px(4), dip2px(12), dip2px(4));
+                LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+                dlp.rightMargin = dip2px(8);
+                downloadBtn.setLayoutParams(dlp);
+                downloadBtn.setOnClickListener(v -> {
+                    if (hasLocal) {
+                        Toast.makeText(MainActivity.this, "音频已缓存到本地", Toast.LENGTH_SHORT).show();
+                    } else {
+                        downloadSoundToLocal(s, container);
+                    }
+                });
+                btns.addView(downloadBtn);
 
                 Button edit = new Button(this);
                 edit.setText("修改");
@@ -1434,6 +2518,63 @@ public class MainActivity extends Activity {
         root3.addView(container);
     }
 
+    // -------- 下载音频到本地缓存 --------
+    private void downloadSoundToLocal(final SoundStore.Sound sound, final ViewGroup container) {
+        if (sound.url == null || sound.url.isEmpty()) {
+            Toast.makeText(this, "无音频URL，无法下载", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final String fileName = sound.id + ".mp3";
+        final java.io.File cacheDir = new java.io.File(getCacheDir(), "sounds");
+        if (!cacheDir.exists()) cacheDir.mkdirs();
+        final java.io.File targetFile = new java.io.File(cacheDir, fileName);
+
+        Toast.makeText(this, "开始下载...", Toast.LENGTH_SHORT).show();
+
+        new Thread(() -> {
+            try {
+                java.net.URL url = new java.net.URL(sound.url);
+                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(60000);
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0");
+                conn.connect();
+                int code = conn.getResponseCode();
+                if (code != 200) {
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this,
+                        "下载失败: HTTP " + code, Toast.LENGTH_SHORT).show());
+                    return;
+                }
+                java.io.InputStream in = conn.getInputStream();
+                java.io.FileOutputStream out = new java.io.FileOutputStream(targetFile);
+                byte[] buf = new byte[4096];
+                int len;
+                while ((len = in.read(buf)) > 0) {
+                    out.write(buf, 0, len);
+                }
+                out.close();
+                in.close();
+                conn.disconnect();
+
+                // 保存本地路径
+                SoundStore.setLocalPath(MainActivity.this, sound.id, targetFile.getAbsolutePath());
+
+                runOnUiThread(() -> {
+                    Toast.makeText(MainActivity.this,
+                        "下载完成: " + targetFile.getName(), Toast.LENGTH_SHORT).show();
+                    // 关闭弹窗并刷新
+                    if (container != null && container.getParent() instanceof ViewGroup) {
+                        ((ViewGroup) container.getParent()).removeView(container);
+                    }
+                    refresh();
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(MainActivity.this,
+                    "下载失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        }).start();
+    }
+
     // -------- 导出自定义白噪音到下载目录 --------
     private void doExportSounds() {
         String json = SoundStore.exportAllToJson(this);
@@ -1551,6 +2692,28 @@ public class MainActivity extends Activity {
         else if (saved == TAB_LIBRARY) renderLibrary();
         else if (saved == TAB_DISCOVER) renderDiscover();
         else if (saved == TAB_ME) renderMe();
+    }
+
+    // 按不区分大小写的方式在 fullText 中高亮 keyword
+    private static CharSequence highlightKeyword(String fullText, String keyword, int highlightColor, int defaultColor) {
+        if (fullText == null) return "";
+        if (keyword == null || keyword.isEmpty()) return fullText;
+        String lowerFull = fullText.toLowerCase(java.util.Locale.getDefault());
+        String lowerKey = keyword.toLowerCase(java.util.Locale.getDefault());
+        int idx = lowerFull.indexOf(lowerKey);
+        if (idx < 0) return fullText;
+        android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder(fullText);
+        while (idx >= 0) {
+            int end = idx + keyword.length();
+            if (end > fullText.length()) end = fullText.length();
+            sb.setSpan(new android.text.style.ForegroundColorSpan(highlightColor),
+                idx, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            // 粗体突出匹配段
+            sb.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD),
+                idx, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            idx = lowerFull.indexOf(lowerKey, end);
+        }
+        return sb;
     }
 
     private int dip2px(float dp) {

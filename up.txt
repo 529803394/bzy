@@ -1,5 +1,0 @@
-# 请访问 https://supabase.com 免费创建项目后替换
-# 1. 创建表 app_version (id:int auto, version:text, apk_url:text)
-# 2. 设置 RLS 策略允许公开 SELECT
-# 3. 将项目 URL 填入上方 assets/up.txt
-https://YOUR_PROJECT.supabase.co/rest/v1/app_version

@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
+import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -17,6 +18,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -25,9 +27,11 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * 猜你喜欢 - 智能推荐白噪音
+ * ✨ 猜你喜欢 — 智能推荐白噪音
  * 核心逻辑：综合分析「当前时间 / 季节 / 天气（模拟） / 地点 / 用户对话历史 / 用户输入诉求」，
- * 输出推理过程 + 推荐结果，点击后可直接进入对应白噪音的聊天室。
+ * 调用 DeepSeek 真实 LLM 进行推理与推荐，点击后进入对应白噪音聊天室。
+ *
+ * 网络失败时自动退回规则基线。
  */
 public class RecommendActivity extends Activity {
 
@@ -214,8 +218,8 @@ public class RecommendActivity extends Activity {
     }
 
     // ========================================================
-    //  推荐引擎（规则 + 关键词 + 上下文）
-    //  模拟 LLM 的推理过程：先列出观察 -> 分析诉求 -> 给出推荐及理由
+    //  推荐引擎（调用 DeepSeek 真实 LLM）
+    //  将 时间/季节/天气/环境/用户诉求 发送给 AI，拿到推荐及理由
     // ========================================================
     private static class Recommendation {
         String soundName;       // 推荐的白噪音名（需匹配 SoundStore 默认名）
@@ -225,185 +229,68 @@ public class RecommendActivity extends Activity {
 
     private Recommendation recommendBasedOn(String userText) {
         Recommendation rec = new Recommendation();
+
+        // 1. 构造上下文
+        String timeNow = new SimpleDateFormat("EEEE HH:mm", Locale.CHINA).format(new Date());
+        String envHint = locationHint;
+
+        // 2. 收集最近一天（24小时）的所有聊天记录（所有白噪音）
+        List<AI.ChatMessage> history = collectRecentChatHistory();
+
+        // 3. 调用大模型（DeepSeek V4 Flash）
+        AI.RecResult ai = AI.recommend(
+                RecommendActivity.this,
+                timeNow, season, weather, envHint,
+                userText,
+                history
+        );
+
+        // 4. 装填结果
+        rec.soundName = (ai == null || ai.soundName == null || ai.soundName.isEmpty())
+                ? "雨声" : ai.soundName;
+        rec.shortReason = (ai == null || ai.shortReason == null || ai.shortReason.isEmpty())
+                ? ("根据你当前状态推荐「" + rec.soundName + "」") : ai.shortReason;
+
+        // 5. 拼接详细推理（含配方理由，用户能看到 AI 的完整分析）
         StringBuilder detail = new StringBuilder();
-
-        // -------- 观察阶段（模拟 LLM 先观察上下文）--------
-        detail.append("【观察到的上下文】\n");
-        detail.append("• 当前时间：").append(new SimpleDateFormat("HH:mm", Locale.CHINA).format(new Date()))
-            .append("（").append(timeOfDay).append("）\n");
-        detail.append("• 季节：").append(season).append("\n");
-        detail.append("• 天气：").append(weather).append("\n");
-        detail.append("• 环境：").append(locationHint).append("\n");
-
-        // 收集对话历史中的主题关键词
-        List<String> historyKeywords = collectHistoryKeywords();
-        if (!historyKeywords.isEmpty()) {
-            detail.append("• 最近常聊的关键词：");
-            for (int i = 0; i < historyKeywords.size(); i++) {
-                if (i > 0) detail.append("、");
-                detail.append(historyKeywords.get(i));
-            }
-            detail.append("\n");
+        if (ai != null && ai.detailedReason != null && !ai.detailedReason.isEmpty()) {
+            detail.append("💡 ").append(ai.detailedReason);
         }
-        if (reasoningHistory != null && !reasoningHistory.isEmpty()) {
-            detail.append("• 本次会话中之前的推荐参考：");
-            for (int i = 0; i < reasoningHistory.size(); i++) {
-                if (i > 0) detail.append("、");
-                detail.append(reasoningHistory.get(i));
-            }
-            detail.append("\n");
-        }
-        if (userText != null && !userText.isEmpty()) {
-            detail.append("• 用户明确诉求：").append(userText).append("\n");
-        }
-
-        detail.append("\n【推理分析】\n");
-
-        // -------- 用户显式诉求优先 --------
-        String textLow = userText == null ? "" : userText.toLowerCase();
-        String text = userText == null ? "" : userText;
-
-        if (matchesAny(text, "雨", "rain", "下雨", "雨声")) {
-            rec.soundName = "雨声";
-            rec.shortReason = "你提到了雨，直接推荐『雨声』";
-            detail.append("→ 用户明确提到了「雨」/「下雨」/「雨声」，这是最强信号，优先匹配。\n");
-            detail.append("→ 雨声的宽频特性最适合屏蔽环境噪声、助眠。\n");
-        } else if (matchesAny(text, "海", "海浪", "海边", "ocean", "wave")) {
-            rec.soundName = "海浪";
-            rec.shortReason = "你提到了海，推荐『海浪』";
-            detail.append("→ 用户明确提到了海洋相关词汇，直接匹配海浪声。\n");
-            detail.append("→ 海浪低频节奏与人的放松状态共振，有助于身心平静。\n");
-        } else if (matchesAny(text, "森林", "树林", "树", "forest")) {
-            rec.soundName = "森林";
-            rec.shortReason = "自然系，推荐『森林』";
-            detail.append("→ 用户想要自然环境，森林的鸟鸣 + 树叶沙沙是最佳选择。\n");
-        } else if (matchesAny(text, "风", "wind")) {
-            rec.soundName = "风声";
-            rec.shortReason = "想要风声，推荐『风声』";
-            detail.append("→ 用户提到了风。风声能制造包裹感，适合需要专注或想睡的情况。\n");
-        } else if (matchesAny(text, "火", "篝火", "温暖", "暖", "cold")) {
-            rec.soundName = "篝火";
-            rec.shortReason = "想要温暖感，推荐『篝火』";
-            detail.append("→ 用户提到火 / 温暖 / 冷。篝火的噼啪声带来安全、温暖的心理暗示。\n");
-        } else if (matchesAny(text, "睡", "眠", "失眠", "助眠", "晚上", "熬夜", "睡不着")) {
-            // 睡眠场景 → 根据季节/天气进一步判断
-            rec.soundName = pickSleepBySeason();
-            rec.shortReason = "睡眠场景：推荐『" + rec.soundName + "』";
-            detail.append("→ 用户表达了睡眠/失眠诉求。\n");
-            detail.append("→ 当前是").append(season).append("的").append(timeOfDay).append("，").append(weather).append("，").append(rec.soundName).append("最契合。\n");
-            detail.append("→ 白噪音循环播放可屏蔽随机噪声，稳定情绪。\n");
-        } else if (matchesAny(text, "工作", "学习", "专注", "专注", "focus", "study", "office", "办公室", "写代码", "做题")) {
-            rec.soundName = pickFocusByWeather();
-            rec.shortReason = "专注场景：推荐『" + rec.soundName + "』";
-            detail.append("→ 用户需要专注/学习环境。\n");
-            detail.append("→ 结合天气（").append(weather).append("）和时间（").append(timeOfDay).append("），").append(rec.soundName).append("可屏蔽干扰但不过度催眠。\n");
-        } else if (matchesAny(text, "放松", "休息", "relax", "压力", "累", "焦虑")) {
-            rec.soundName = "森林";
-            rec.shortReason = "放松场景：推荐『森林』";
-            detail.append("→ 用户想要放松。森林环境音经研究可降低皮质醇水平。\n");
-            detail.append("→ 推荐闭上眼睛，放低音量，感受 10~15 分钟。\n");
-        } else if (matchesAny(text, "热", "闷热", "cool", "夏天", "summer")) {
-            rec.soundName = "雨声";
-            rec.shortReason = "降温心理暗示：推荐『雨声』";
-            detail.append("→ 用户提到闷热，雨声会带来心理上的降温感。\n");
-        } else if (matchesAny(text, "冷", "cold", "冬天", "冬")) {
-            rec.soundName = "篝火";
-            rec.shortReason = "温暖心理暗示：推荐『篝火』";
-            detail.append("→ 冷环境下，篝火声会带来温暖和陪伴感。\n");
-        } else {
-            // -------- 无明确诉求 → 完全基于上下文 + 历史 --------
-            detail.append("→ 用户没有明确的关键词，综合时间/季节/天气/历史对话进行推荐。\n");
-
-            // 深夜/夜晚 → 助眠
-            if (hour >= 22 || hour < 5) {
-                rec.soundName = pickSleepBySeason();
-                rec.shortReason = timeOfDay + "，适合助眠：推荐『" + rec.soundName + "』";
-                detail.append("→ 现在是").append(timeOfDay).append("，最适合放一首循环的助眠音。\n");
-                detail.append("→ 考虑到").append(season).append("，").append(rec.soundName).append("的温度感最合适。\n");
-            }
-            // 清晨/上午 → 清新专注
-            else if (hour >= 5 && hour < 11) {
-                if (weather.contains("雨") || weather.contains("云")) {
-                    rec.soundName = "雨声";
-                    rec.shortReason = "阴雨天工作/学习，雨声最搭";
-                    detail.append("→ 阴雨天的上午：雨声营造柔和专注氛围，帮助进入工作状态。\n");
-                } else {
-                    rec.soundName = "森林";
-                    rec.shortReason = season + "上午，森林鸟鸣最提神";
-                    detail.append("→ 晴朗的").append(season).append("上午：鸟鸣+树叶沙沙最提神。\n");
-                }
-            }
-            // 中午/下午 → 专注/平静
-            else if (hour >= 11 && hour < 17) {
-                if (weather.contains("闷热") || month >= 6 && month <= 8) {
-                    rec.soundName = "风声";
-                    rec.shortReason = season + timeOfDay + "易犯困，风声让你保持清醒但不兴奋";
-                    detail.append("→ 午后容易犯困，风声既安静又不会让你睡着。\n");
-                } else if (weather.contains("风") || weather.contains("寒")) {
-                    rec.soundName = "篝火";
-                    rec.shortReason = weather + "天气，推荐篝火声获得温暖感";
-                    detail.append("→ ").append(weather).append("，篝火声会带来心理温暖。\n");
-                } else {
-                    rec.soundName = pickFocusByWeather();
-                    rec.shortReason = "工作/学习时段：推荐『" + rec.soundName + "』";
-                    detail.append("→ 午后时段需要保持专注。\n");
-                }
-            }
-            // 傍晚 → 放松
-            else {
-                if (weather.contains("雨")) {
-                    rec.soundName = "雨声";
-                    rec.shortReason = "傍晚 + 雨，经典搭配";
-                    detail.append("→ 傍晚雨天：最适合开一盏灯、放雨声放松。\n");
-                } else {
-                    rec.soundName = "海浪";
-                    rec.shortReason = season + "傍晚，海浪让你慢慢减速";
-                    detail.append("→ 傍晚适合从一天的紧张中逐渐恢复，海浪的节奏最自然。\n");
-                }
-            }
-
-            // 如果历史对话集中在某个关键词上，且刚刚没推荐过，二次加权
-            if (!historyKeywords.isEmpty()) {
-                // 若用户历史常聊「雨声」/「海浪」等，再以该关键词加权
-                for (String kw : historyKeywords) {
-                    if (kw.contains("雨") && !rec.soundName.equals("雨声") && reasoningHistory.size() < 1) {
-                        rec.soundName = "雨声";
-                        detail.append("→ 检测到你最近的聊天关键词『雨』较多，加权后改为推荐雨声。\n");
-                        rec.shortReason = "结合你的聊天关键词，最终推荐『雨声』";
-                    }
-                    if (kw.contains("海") && !rec.soundName.equals("海浪") && reasoningHistory.size() < 1) {
-                        rec.soundName = "海浪";
-                        detail.append("→ 检测到你最近常『海』相关聊天关键词，加权后改为海浪。\n");
-                        rec.shortReason = "结合你的聊天关键词，最终推荐『海浪』";
-                    }
-                }
+        if (ai != null && ai.recipe != null && !ai.recipe.isEmpty()) {
+            detail.append("\n\n🔧 配方参考：").append(ai.recipe);
+            if (ai.recipeReason != null && !ai.recipeReason.isEmpty()) {
+                detail.append("\n").append(ai.recipeReason);
             }
         }
-
-        // 避免连续推荐同一个
-        if (reasoningHistory != null && reasoningHistory.contains(rec.soundName) && reasoningHistory.size() >= 1) {
-            // 换一个（从默认列表挑不同）
-            String[] names = SoundStore.DEFAULT_NAMES;
-            for (String n : names) {
-                if (!n.equals(rec.soundName)) {
-                    rec.soundName = n;
-                    detail.append("→ 刚刚已经推荐过或聊过，换一首试试：").append(n).append("。\n");
-                    break;
-                }
-            }
+        if (ai == null || detail.length() == 0) {
+            detail.append(rec.shortReason);
         }
-
-        detail.append("\n【最终推荐】").append(rec.soundName).append("\n");
-        detail.append(rec.shortReason).append("。");
-
         rec.detailedReason = detail.toString();
-        // 记录本次推荐名
+
         if (reasoningHistory != null) {
             reasoningHistory.add(rec.soundName);
             if (reasoningHistory.size() > 5) reasoningHistory.remove(0);
         }
 
         return rec;
+    }
+
+    // 从所有白噪音中收集最近 24 小时的用户/助手对话
+    private List<AI.ChatMessage> collectRecentChatHistory() {
+        List<AI.ChatMessage> result = new ArrayList<>();
+        try {
+            long cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000;
+            List<SoundStore.Sound> all = SoundStore.getAll(this);
+            for (SoundStore.Sound s : all) {
+                List<SoundStore.Message> msgs = SoundStore.loadMessages(this, s.id);
+                for (SoundStore.Message m : msgs) {
+                    if (m.time >= cutoff) {
+                        result.add(new AI.ChatMessage("[" + s.name + "] " + m.text, m.fromUser));
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return result;
     }
 
     // 睡眠场景：按季节选最舒服的白噪音
@@ -671,9 +558,160 @@ public class RecommendActivity extends Activity {
             });
             resultCard.addView(switchBtn);
 
+            // ================= 新增：AI 生成新白噪音 =================
+            Button genBtn = new Button(this);
+            genBtn.setText("✨ AI 生成一个新白噪音");
+            genBtn.setTextSize(13);
+            genBtn.setTextColor(Color.parseColor("#f59e0b"));
+            genBtn.setBackgroundColor(Color.TRANSPARENT);
+            LinearLayout.LayoutParams gblp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            gblp.topMargin = dip2px(4);
+            genBtn.setLayoutParams(gblp);
+            genBtn.setOnClickListener(v -> {
+                addUserBubble("帮我 AI 生成一个新白噪音");
+
+                // 思考气泡（AI 生成声音用）
+                final TextView genThinking = new TextView(this);
+                genThinking.setText("🤖 正在构思声音配方并合成音频...");
+                genThinking.setTextSize(13);
+                genThinking.setTextColor(textSub);
+                genThinking.setPadding(dip2px(12), dip2px(8), dip2px(12), dip2px(8));
+                GradientDrawable tbg = new GradientDrawable();
+                tbg.setColor(isDarkMode(this) ? Color.parseColor("#2a2a2a") : Color.parseColor("#FFFFFF"));
+                tbg.setCornerRadius(dip2px(8));
+                genThinking.setBackground(tbg);
+                LinearLayout thinkingRow = new LinearLayout(this);
+                thinkingRow.setPadding(0, dip2px(4), 0, 0);
+                thinkingRow.addView(genThinking);
+                msgContainer.addView(thinkingRow);
+                msgScroller.post(() -> msgScroller.fullScroll(View.FOCUS_DOWN));
+
+                new AsyncTask<Void, Void, AI.CreativeSound>() {
+                    private String errorMsg = null;
+                    private File generatedFile = null;
+                    @Override
+                    protected AI.CreativeSound doInBackground(Void... p) {
+                        try {
+                            String timeNow = new SimpleDateFormat("EEEE HH:mm", Locale.CHINA).format(new Date());
+                            List<AI.ChatMessage> history = collectRecentChatHistory();
+                            // 1. 调用大模型（DeepSeek V4 Flash）生成创意
+                            AI.CreativeSound cs = AI.generateCreativeSound(
+                                    RecommendActivity.this, userText, history,
+                                    timeNow, season, weather, locationHint
+                            );
+                            if (cs == null || cs.name == null || cs.name.isEmpty()) {
+                                errorMsg = "生成失败，用默认声音";
+                                cs = new AI.CreativeSound();
+                                cs.name = "静谧时光";
+                                cs.description = "一段宁静的环境音";
+                                cs.recipe = "rain:0.6,wind:0.4";
+                                cs.reason = "模型未返回有效结果，已走兜底路径。";
+                            }
+
+                            // 2. 根据配方合成 WAV
+                            File dir = getExternalFilesDir(null);
+                            if (dir == null) dir = getFilesDir();
+                            generatedFile = new File(dir, "ai_sound_" + System.currentTimeMillis() + ".wav");
+                            SoundGenerator.generateWav(generatedFile, cs.recipe, 45);
+                            return cs;
+                        } catch (Throwable e) {
+                            errorMsg = "生成失败: " + e.getMessage();
+                            return null;
+                        }
+                    }
+                    @Override
+                    protected void onPostExecute(AI.CreativeSound cs) {
+                        try { ViewGroup parent = (ViewGroup)thinkingRow.getParent(); if (parent != null) parent.removeView(thinkingRow); } catch (Exception ignored) {}
+                        if (cs == null) {
+                            Toast.makeText(RecommendActivity.this, errorMsg == null ? "生成失败" : errorMsg, Toast.LENGTH_LONG).show();
+                            return;
+                        }
+                        // 3. 写入自定义白噪音
+                        String fileUrl = "file://" + generatedFile.getAbsolutePath();
+                        SoundStore.addCustom(RecommendActivity.this, cs.name, fileUrl, null);
+
+                        // 4. 显示结果卡片（带名字/描述/配方/理由）
+                        showGeneratedSoundCard(cs, fileUrl);
+                    }
+                }.execute();
+            });
+            resultCard.addView(genBtn);
+
             msgContainer.addView(resultCard);
             msgScroller.post(() -> msgScroller.fullScroll(View.FOCUS_DOWN));
         }, 700);
+    }
+
+    // ========================================================
+    //  AI 生成声音的结果卡片
+    // ========================================================
+    private void showGeneratedSoundCard(AI.CreativeSound cs, String fileUrl) {
+        boolean dark = isDarkMode(this);
+        int textMain = dark ? Color.WHITE : Color.BLACK;
+        int textSub = dark ? Color.parseColor("#CCCCCC") : Color.parseColor("#666666");
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dip2px(16), dip2px(16), dip2px(16), dip2px(16));
+        GradientDrawable cbg = new GradientDrawable();
+        cbg.setColor(dark ? Color.parseColor("#1f2937") : Color.parseColor("#FFFFFF"));
+        cbg.setCornerRadius(dip2px(12));
+        cbg.setStroke(dip2px(2), Color.parseColor("#f59e0b"));
+        card.setBackground(cbg);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        clp.topMargin = dip2px(10);
+        card.setLayoutParams(clp);
+
+        TextView title = new TextView(this);
+        title.setText("✨ AI 新声音：" + cs.name);
+        title.setTextSize(17);
+        title.setTextColor(Color.parseColor("#f59e0b"));
+        title.getPaint().setFakeBoldText(true);
+        card.addView(title);
+
+        TextView desc = new TextView(this);
+        desc.setText(cs.description);
+        desc.setTextSize(13);
+        desc.setTextColor(textMain);
+        desc.setPadding(0, dip2px(6), 0, dip2px(4));
+        card.addView(desc);
+
+        TextView recipe = new TextView(this);
+        recipe.setText("配方: " + cs.recipe);
+        recipe.setTextSize(11);
+        recipe.setTextColor(textSub);
+        card.addView(recipe);
+
+        Button enterBtn = new Button(this);
+        enterBtn.setText("▶ 立即进入「" + cs.name + "」聊天室");
+        enterBtn.setTextSize(14);
+        enterBtn.setTextColor(Color.WHITE);
+        enterBtn.setBackgroundColor(Color.parseColor("#07C160"));
+        enterBtn.setPadding(dip2px(12), dip2px(10), dip2px(12), dip2px(10));
+        LinearLayout.LayoutParams eblp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        eblp.topMargin = dip2px(10);
+        enterBtn.setLayoutParams(eblp);
+        enterBtn.setOnClickListener(v -> {
+            // 根据文件名/路径找到最新添加的自定义 sound 并进入
+            SoundStore.Sound target = null;
+            for (SoundStore.Sound s : SoundStore.getAll(this)) {
+                if (s.isCustom && fileUrl.equals(s.url)) { target = s; break; }
+            }
+            if (target == null) {
+                Toast.makeText(this, "未找到声音", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            Intent i = new Intent(RecommendActivity.this, ChatActivity.class);
+            i.putExtra("sound_id", target.id);
+            startActivity(i);
+        });
+        card.addView(enterBtn);
+
+        msgContainer.addView(card);
+        msgScroller.post(() -> msgScroller.fullScroll(View.FOCUS_DOWN));
     }
 
     // ========================================================

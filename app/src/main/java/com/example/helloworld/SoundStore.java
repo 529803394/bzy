@@ -15,6 +15,32 @@ public class SoundStore {
 
     // 内置白噪音
     public static final String[] DEFAULT_NAMES = {"雨声", "海浪", "森林", "风声", "篝火"};
+    public static final String[] DEFAULT_NAMES_CN = DEFAULT_NAMES; // 给 AI.java 引用
+
+    // 把大模型返回的文字匹配到最接近的内置白噪音名
+    public static String matchBuiltinName(String name) {
+        if (name == null || name.isEmpty()) return DEFAULT_NAMES[0];
+        String n = name.trim();
+        for (String cn : DEFAULT_NAMES) {
+            if (cn.equals(n)) return cn;
+            if (n.contains(cn)) return cn;
+            if (cn.contains(n)) return cn;
+        }
+        // 关键词匹配
+        if (containsAny(n, "雨", "rain")) return "雨声";
+        if (containsAny(n, "海", "浪", "ocean", "wave")) return "海浪";
+        if (containsAny(n, "森", "林", "forest", "鸟")) return "森林";
+        if (containsAny(n, "风", "wind")) return "风声";
+        if (containsAny(n, "火", "篝", "burn", "fire")) return "篝火";
+        // 最兜底
+        return DEFAULT_NAMES[0];
+    }
+    private static boolean containsAny(String src, String... keys) {
+        if (src == null) return false;
+        String lower = src.toLowerCase();
+        for (String k : keys) if (lower.contains(k.toLowerCase())) return true;
+        return false;
+    }
     public static final int[] DEFAULT_RES = {
         R.raw.rain, R.raw.ocean, R.raw.forest, R.raw.wind, R.raw.campfire
     };
@@ -44,17 +70,21 @@ public class SoundStore {
     };
 
     public static class Sound {
-        public String id;          // 唯一ID
+        public String id;              // 唯一ID
         public String name;
-        public int resId;          // 内置资源ID，0表示自定义
-        public String url;         // 自定义音频URL
-        public String bgImageUrl;  // 自定义背景图片URL（仅自定义白噪音可用）
+        public int resId;              // 内置资源ID，0表示自定义
+        public String url;             // 自定义/网络音频URL
+        public String bgImageUrl;      // 背景图片网络URL
+        public String localPath;       // 音频本地缓存路径（播放优先用此）
+        public String bgImageLocalPath; // 背景图片本地缓存路径
         public boolean isCustom;
         public boolean isPinned;
-        public boolean isDeleted;  // 是否被删除（移到乐库）
-        public String lastMessage; // 最后一条消息（显示在聊天列表上）
+        public boolean isDeleted;      // 是否被删除（移到乐库）
+        public boolean isNetwork;      // 是否来自网络音乐列表
+        public long fileSize;          // 本地缓存文件大小（字节）
+        public String lastMessage;
         public long lastTime;
-        public int themeIndex;     // 主题色索引
+        public int themeIndex;
 
         public Sound(String id, String name, int resId) {
             this.id = id;
@@ -62,9 +92,13 @@ public class SoundStore {
             this.resId = resId;
             this.url = null;
             this.bgImageUrl = null;
+            this.localPath = null;
+            this.bgImageLocalPath = null;
             this.isCustom = false;
             this.isPinned = false;
             this.isDeleted = false;
+            this.isNetwork = false;
+            this.fileSize = 0;
             this.lastMessage = "";
             this.lastTime = 0;
             this.themeIndex = Math.abs(id.hashCode()) % 5;
@@ -76,12 +110,45 @@ public class SoundStore {
             this.resId = 0;
             this.url = url;
             this.bgImageUrl = bgImageUrl;
+            this.localPath = null;
+            this.bgImageLocalPath = null;
             this.isCustom = true;
             this.isPinned = false;
             this.isDeleted = false;
+            this.isNetwork = false;
+            this.fileSize = 0;
             this.lastMessage = "";
             this.lastTime = 0;
             this.themeIndex = Math.abs(id.hashCode()) % 5;
+        }
+
+        // 网络音乐专用构造（支持 bgImageUrl）
+        public static Sound fromNetwork(String url, String name) {
+            return fromNetwork(url, name, null);
+        }
+
+        public static Sound fromNetwork(String url, String name, String bgImageUrl) {
+            Sound s = new Sound("net_" + md5(url), name, 0);
+            s.url = url;
+            s.bgImageUrl = bgImageUrl;
+            s.isNetwork = true;
+            s.isCustom = false;
+            s.localPath = null;
+            s.bgImageLocalPath = null;
+            s.fileSize = 0;
+            return s;
+        }
+
+        private static String md5(String input) {
+            try {
+                java.security.MessageDigest md = java.security.MessageDigest.getInstance("MD5");
+                byte[] digest = md.digest(input.getBytes("UTF-8"));
+                StringBuilder sb = new StringBuilder();
+                for (byte b : digest) sb.append(String.format("%02x", b));
+                return sb.toString();
+            } catch (Exception e) {
+                return String.valueOf(input.hashCode());
+            }
         }
 
         public int getSoundIndex() {
@@ -169,6 +236,8 @@ public class SoundStore {
                             s.isDeleted = obj.optBoolean("isDeleted", false);
                             s.lastMessage = obj.optString("lastMessage", "");
                             s.lastTime = obj.optLong("lastTime", 0);
+                            String bg = obj.optString("bgImageUrl", null);
+                            if (bg != null && !bg.isEmpty()) s.bgImageUrl = bg;
                             break;
                         }
                     }
@@ -176,6 +245,10 @@ public class SoundStore {
                     Sound s = new Sound(id, obj.getString("name"),
                         obj.optString("url", ""),
                         obj.optString("bgImageUrl", null));
+                    s.localPath = obj.optString("localPath", null);
+                    if (s.localPath != null && s.localPath.isEmpty()) s.localPath = null;
+                    s.bgImageLocalPath = obj.optString("bgImageLocalPath", null);
+                    if (s.bgImageLocalPath != null && s.bgImageLocalPath.isEmpty()) s.bgImageLocalPath = null;
                     s.isPinned = obj.optBoolean("isPinned", false);
                     s.isDeleted = obj.optBoolean("isDeleted", false);
                     s.lastMessage = obj.optString("lastMessage", "");
@@ -197,6 +270,10 @@ public class SoundStore {
                 if (s.isCustom) {
                     obj.put("url", s.url == null ? "" : s.url);
                     obj.put("bgImageUrl", s.bgImageUrl == null ? "" : s.bgImageUrl);
+                    obj.put("localPath", s.localPath == null ? "" : s.localPath);
+                    obj.put("bgImageLocalPath", s.bgImageLocalPath == null ? "" : s.bgImageLocalPath);
+                } else {
+                    obj.put("bgImageUrl", s.bgImageUrl == null ? "" : s.bgImageUrl);
                 }
                 obj.put("isPinned", s.isPinned);
                 obj.put("isDeleted", s.isDeleted);
@@ -212,7 +289,19 @@ public class SoundStore {
     public static synchronized void addCustom(Context ctx, String name, String url, String bgImageUrl) {
         getAll(ctx);
         String id = "custom_" + System.currentTimeMillis();
-        Sound s = new Sound(id, name, url, bgImageUrl);
+        addCustom(ctx, id, name, url, bgImageUrl);
+    }
+
+    public static synchronized void addCustom(Context ctx, String id, String name, String url, String bgImageUrl) {
+        addCustom(ctx, id, name, url, bgImageUrl, null);
+    }
+
+    public static synchronized void addCustom(Context ctx, String id, String name, String url, String bgImageUrl, String localPath) {
+        getAll(ctx);
+        Sound s = new Sound(id, name, url == null ? "" : url, bgImageUrl);
+        if (localPath != null && !localPath.isEmpty()) {
+            s.localPath = localPath;
+        }
         sounds.add(s);
         save(ctx);
     }
@@ -227,6 +316,66 @@ public class SoundStore {
         }
     }
 
+    // 同时支持设置 url（网络地址） 和 localPath（本地已缓存路径）
+    public static synchronized void setUrlAndLocalPath(Context ctx, String id, String url, String localPath) {
+        Sound s = findById(ctx, id);
+        if (s != null) {
+            if (url != null) s.url = url;
+            if (localPath != null) s.localPath = localPath;
+            save(ctx);
+        }
+    }
+
+    // 判断一个 Sound 是否已下载完成（优先看 localPath）
+    public static boolean isDownloaded(Sound s) {
+        if (s == null) return false;
+        if (s.localPath != null && !s.localPath.isEmpty()) {
+            java.io.File f = new java.io.File(s.localPath);
+            if (f.exists()) return true;
+        }
+        // 内置资源 id>0 视为已在本地
+        return (s.resId > 0);
+    }
+
+    // 返回 sound 实际用于播放的源（localPath 优先，否则 url，否则 null）
+    public static String getPlaySource(Sound s) {
+        if (s == null) return null;
+        if (s.localPath != null && !s.localPath.isEmpty()) {
+            java.io.File f = new java.io.File(s.localPath);
+            if (f.exists()) return s.localPath;
+        }
+        if (s.url != null && !s.url.isEmpty()) return s.url;
+        if (s.resId > 0) return "#res:" + s.resId;
+        return null;
+    }
+
+    // 设置本地缓存路径（下载完成后调用）
+    public static synchronized void setLocalPath(Context ctx, String id, String localPath) {
+        Sound s = findById(ctx, id);
+        if (s != null && s.isCustom) {
+            s.localPath = localPath;
+            save(ctx);
+        }
+    }
+
+    // 设置背景图片 URL（内置和自定义白噪音都支持）
+    public static synchronized void setBgImageUrl(Context ctx, String id, String bgImageUrl) {
+        Sound s = findById(ctx, id);
+        if (s != null) {
+            s.bgImageUrl = bgImageUrl;
+            save(ctx);
+        }
+    }
+
+    // 重命名任意声音（内置或自定义）
+    public static synchronized void rename(Context ctx, String id, String newName) {
+        Sound s = findById(ctx, id);
+        if (s != null && newName != null && !newName.trim().isEmpty()) {
+            s.name = newName.trim();
+            save(ctx);
+        }
+    }
+
     public static synchronized void deleteCustom(Context ctx, String id) {
         for (int i = 0; i < sounds.size(); i++) {
             if (sounds.get(i).id.equals(id) && sounds.get(i).isCustom) {
@@ -235,6 +384,26 @@ public class SoundStore {
                 return;
             }
         }
+    }
+
+    public static synchronized int bulkDelete(Context ctx, java.util.Collection<String> ids) {
+        if (ids == null || ids.isEmpty()) return 0;
+        int removed = 0;
+        // 反向遍历避免索引错位
+        for (int i = sounds.size() - 1; i >= 0; i--) {
+            Sound s = sounds.get(i);
+            if (ids.contains(s.id)) {
+                if (s.isCustom) {
+                    sounds.remove(i);
+                    removed++;
+                } else {
+                    s.isDeleted = true;
+                    removed++;
+                }
+            }
+        }
+        if (removed > 0) save(ctx);
+        return removed;
     }
 
     public static synchronized void togglePin(Context ctx, String id) {
@@ -356,5 +525,58 @@ public class SoundStore {
         if (diff < 86400000L * 7) return (diff / 86400000) + "天前";
         java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("MM/dd");
         return sdf.format(new java.util.Date(t));
+    }
+
+    // ========== 网络音乐缓存管理 ==========
+    private static final String NET_CACHE_PREFS = "net_music_cache";
+    private static final String NET_CACHE_KEY_PREFIX = "cache_";
+
+    // 获取缓存目录（应用私有目录）
+    public static java.io.File getNetworkCacheDir(Context ctx) {
+        java.io.File dir = new java.io.File(ctx.getFilesDir(), "music_cache");
+        if (!dir.exists()) dir.mkdirs();
+        return dir;
+    }
+
+    // 根据 URL 生成缓存文件名
+    public static String getCacheFileName(String url) {
+        String md5val;
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("MD5");
+            byte[] digest = md.digest(url.getBytes("UTF-8"));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) sb.append(String.format("%02x", b));
+            md5val = sb.toString();
+        } catch (Exception e) {
+            md5val = String.valueOf(url.hashCode());
+        }
+        return "net_" + md5val + ".mp3";
+    }
+
+    // 检查网络音乐是否已缓存（更新 localPath 和 fileSize）
+    public static void checkNetworkCache(Context ctx, Sound s) {
+        if (!s.isNetwork || s.url == null) return;
+        String fileName = getCacheFileName(s.url);
+        java.io.File cached = new java.io.File(getNetworkCacheDir(ctx), fileName);
+        if (cached.exists()) {
+            s.localPath = cached.getAbsolutePath();
+            s.fileSize = cached.length();
+        } else {
+            s.localPath = null;
+            s.fileSize = 0;
+        }
+    }
+
+    // 批量检查缓存（对网络列表用）
+    public static void checkNetworkCacheBatch(Context ctx, List<Sound> list) {
+        for (Sound s : list) checkNetworkCache(ctx, s);
+    }
+
+    // 格式化为可读文件大小
+    public static String formatFileSize(long bytes) {
+        if (bytes <= 0) return "未知";
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024.0);
+        return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
     }
 }

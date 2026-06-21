@@ -8,7 +8,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.helloworld"
-        minSdk = 26
+        minSdk = 21
         targetSdk = 34
         versionCode = 7
         versionName = "2.5.0"
@@ -30,4 +30,5 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+    implementation("androidx.core:core:1.13.1")
 }
