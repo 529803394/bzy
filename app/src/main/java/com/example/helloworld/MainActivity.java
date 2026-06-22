@@ -1903,55 +1903,50 @@ public class MainActivity extends Activity {
         panel.addView(divider2);
 
         // 背景显示模式
-        TextView bgModeLabel = new TextView(this);
-        bgModeLabel.setText("聊天背景显示模式");
-        bgModeLabel.setTextSize(14);
-        bgModeLabel.setTextColor(textMain);
-        bgModeLabel.setPadding(dip2px(16), dip2px(12), dip2px(16), dip2px(8));
-        panel.addView(bgModeLabel);
-
         final int currentBgMode = getSharedPreferences("whitenoise_settings", MODE_PRIVATE)
             .getInt("bg_display_mode", 0); // 0=图片优先, 1=视频优先
 
-        // 单选开关
-        LinearLayout bgModeSwitch = new LinearLayout(this);
-        bgModeSwitch.setOrientation(LinearLayout.HORIZONTAL);
-        bgModeSwitch.setGravity(Gravity.CENTER_VERTICAL);
-        bgModeSwitch.setPadding(dip2px(16), 0, dip2px(16), dip2px(12));
-        bgModeSwitch.setLayoutParams(new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        LinearLayout bgModeRow = new LinearLayout(this);
+        bgModeRow.setOrientation(LinearLayout.HORIZONTAL);
+        bgModeRow.setGravity(Gravity.CENTER_VERTICAL);
+        bgModeRow.setPadding(dip2px(16), dip2px(12), dip2px(16), dip2px(12));
+        LinearLayout.LayoutParams bgmlp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        bgModeRow.setLayoutParams(bgmlp);
 
-        TextView modeText = new TextView(this);
-        modeText.setText(currentBgMode == 0 ? "图片优先" : "视频优先");
-        modeText.setTextSize(14);
-        modeText.setTextColor(textMain);
-        LinearLayout.LayoutParams mtp = new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
-        modeText.setLayoutParams(mtp);
+        LinearLayout bgModeText = new LinearLayout(this);
+        bgModeText.setOrientation(LinearLayout.VERTICAL);
+        bgModeText.setLayoutParams(new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
 
-        Switch switchBtn = new Switch(this);
-        switchBtn.setChecked(currentBgMode == 1);
-        switchBtn.setTrackTintMode(PorterDuff.Mode.SRC_ATOP);
-        switchBtn.setThumbTintList(android.content.res.ColorStateList.valueOf(
-            currentBgMode == 1 ? Color.parseColor("#10AEFF") : Color.parseColor("#cccccc")));
-        switchBtn.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            int mode = isChecked ? 1 : 0;
-            getSharedPreferences("whitenoise_settings", MODE_PRIVATE)
-                .edit().putInt("bg_display_mode", mode).apply();
-            modeText.setText(isChecked ? "视频优先" : "图片优先");
-            Toast.makeText(MainActivity.this, "已切换为" + (isChecked ? "视频优先" : "图片优先") + "模式", Toast.LENGTH_SHORT).show();
+        TextView bgmt1 = new TextView(this);
+        bgmt1.setText("聊天背景视频优先");
+        bgmt1.setTextSize(15);
+        bgmt1.setTextColor(textMain);
+        bgModeText.addView(bgmt1);
+
+        TextView bgmt2 = new TextView(this);
+        bgmt2.setText(currentBgMode == 1 ? "视频优先，辅以图片" : "图片优先，辅以视频");
+        bgmt2.setTextSize(11);
+        bgmt2.setTextColor(textSub);
+        bgmt2.setPadding(0, dip2px(4), 0, 0);
+        bgModeText.addView(bgmt2);
+        bgModeRow.addView(bgModeText);
+
+        final SwitchCompatImpl bgModeSwitch = new SwitchCompatImpl(this);
+        bgModeSwitch.setChecked(currentBgMode == 1);
+        bgModeSwitch.setOnCheckedChanged(new Runnable() {
+            @Override public void run() {
+                int mode = bgModeSwitch.isChecked() ? 1 : 0;
+                getSharedPreferences("whitenoise_settings", MODE_PRIVATE)
+                    .edit().putInt("bg_display_mode", mode).apply();
+                bgmt2.setText(bgModeSwitch.isChecked() ? "视频优先，辅以图片" : "图片优先，辅以视频");
+                Toast.makeText(MainActivity.this, "已切换为" + (bgModeSwitch.isChecked() ? "视频优先" : "图片优先") + "模式", Toast.LENGTH_SHORT).show();
+            }
         });
-        bgModeSwitch.addView(modeText);
-        bgModeSwitch.addView(switchBtn);
-        panel.addView(bgModeSwitch);
-
-        TextView bgModeHint = new TextView(this);
-        bgModeHint.setText("视频优先时，若无视频则显示图片");
-        bgModeHint.setTextSize(11);
-        bgModeHint.setTextColor(textSub);
-        bgModeHint.setGravity(Gravity.CENTER);
-        bgModeHint.setPadding(0, dip2px(6), 0, 0);
-        panel.addView(bgModeHint);
+        bgModeRow.addView(bgModeSwitch.getView());
+        panel.addView(bgModeRow);
 
         // 分割线
         View divider3 = new View(this);
