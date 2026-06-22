@@ -24,6 +24,8 @@ import android.webkit.WebViewClient;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.Switch;
+import android.graphics.PorterDuff;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
@@ -1910,40 +1912,38 @@ public class MainActivity extends Activity {
 
         final int currentBgMode = getSharedPreferences("whitenoise_settings", MODE_PRIVATE)
             .getInt("bg_display_mode", 0); // 0=图片优先, 1=视频优先
-        final int[] bgModes = new int[]{0, 1};
-        final String[] bgModeLabels = new String[]{"图片优先", "视频优先"};
-        LinearLayout bgModeBtns = new LinearLayout(this);
-        bgModeBtns.setOrientation(LinearLayout.HORIZONTAL);
-        bgModeBtns.setPadding(dip2px(16), 0, dip2px(16), dip2px(4));
-        bgModeBtns.setLayoutParams(new LinearLayout.LayoutParams(
+
+        // 单选开关
+        LinearLayout bgModeSwitch = new LinearLayout(this);
+        bgModeSwitch.setOrientation(LinearLayout.HORIZONTAL);
+        bgModeSwitch.setGravity(Gravity.CENTER_VERTICAL);
+        bgModeSwitch.setPadding(dip2px(16), 0, dip2px(16), dip2px(12));
+        bgModeSwitch.setLayoutParams(new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-        for (int i = 0; i < bgModes.length; i++) {
-            Button b = new Button(this);
-            b.setText(bgModeLabels[i]);
-            b.setTextSize(13);
-            final boolean active = currentBgMode == bgModes[i];
-            b.setTextColor(active ? Color.WHITE : textMain);
-            GradientDrawable g = new GradientDrawable();
-            g.setCornerRadius(dip2px(8));
-            g.setColor(active ? btnActive : btnBg);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-                b.setBackground(g);
-            } else {
-                b.setBackgroundDrawable(g);
-            }
-            final int mode = bgModes[i];
-            b.setOnClickListener(v -> {
-                getSharedPreferences("whitenoise_settings", MODE_PRIVATE)
-                    .edit().putInt("bg_display_mode", mode).apply();
-                Toast.makeText(MainActivity.this, "已切换为" + bgModeLabels[mode] + "模式", Toast.LENGTH_SHORT).show();
-            });
-            LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
-                0, dip2px(38), 1);
-            if (i > 0) blp.leftMargin = dip2px(8);
-            b.setLayoutParams(blp);
-            bgModeBtns.addView(b);
-        }
-        panel.addView(bgModeBtns);
+
+        TextView modeText = new TextView(this);
+        modeText.setText(currentBgMode == 0 ? "图片优先" : "视频优先");
+        modeText.setTextSize(14);
+        modeText.setTextColor(textMain);
+        LinearLayout.LayoutParams mtp = new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        modeText.setLayoutParams(mtp);
+
+        Switch switchBtn = new Switch(this);
+        switchBtn.setChecked(currentBgMode == 1);
+        switchBtn.setTrackTintMode(PorterDuff.Mode.SRC_ATOP);
+        switchBtn.setThumbTintList(android.content.res.ColorStateList.valueOf(
+            currentBgMode == 1 ? Color.parseColor("#10AEFF") : Color.parseColor("#cccccc")));
+        switchBtn.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            int mode = isChecked ? 1 : 0;
+            getSharedPreferences("whitenoise_settings", MODE_PRIVATE)
+                .edit().putInt("bg_display_mode", mode).apply();
+            modeText.setText(isChecked ? "视频优先" : "图片优先");
+            Toast.makeText(MainActivity.this, "已切换为" + (isChecked ? "视频优先" : "图片优先") + "模式", Toast.LENGTH_SHORT).show();
+        });
+        bgModeSwitch.addView(modeText);
+        bgModeSwitch.addView(switchBtn);
+        panel.addView(bgModeSwitch);
 
         TextView bgModeHint = new TextView(this);
         bgModeHint.setText("视频优先时，若无视频则显示图片");
