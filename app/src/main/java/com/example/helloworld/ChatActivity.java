@@ -1488,9 +1488,9 @@ public class ChatActivity extends Activity {
                                 statusText.setText("提交失败: " + submitResult.error);
                                 return;
                             }
-                            statusText.setText("视频生成中，请稍候（约30秒）...");
+                            statusText.setText("任务已提交: " + submitResult.taskId + "\n后台生成中，请关注聊天窗口");
                             // 开始轮询
-                            pollVideoTask(submitResult.taskId, statusText, dialogWrap);
+                            pollVideoTask(submitResult.taskId);
                         }
                     });
                 }
@@ -1514,17 +1514,17 @@ public class ChatActivity extends Activity {
         bgRoot.addView(dialogWrap);
     }
 
-    // 轮询视频生成任务，完成后展示结果
-    private void pollVideoTask(final String taskId, final TextView statusText, final FrameLayout dialogWrap) {
+    // 轮询视频生成任务，完成后在聊天窗口通知结果
+    private void pollVideoTask(final String taskId) {
         final android.os.Handler handler = new android.os.Handler();
-        final int maxRetries = 60; // 最多轮询60次（约2分钟）
-        final int delayMs = 3000;  // 每3秒查询一次
+        final int maxRetries = 10;    // 最多轮询10次
+        final int delayMs = 300000;    // 每5分钟查询一次
         final int[] retryCount = {0};
 
         Runnable pollRunnable = new Runnable() {
             @Override public void run() {
                 if (retryCount[0] >= maxRetries) {
-                    statusText.setText("视频生成超时，请稍后重试");
+                    addMessage("视频生成超时（任务ID: " + taskId + "），请稍后重试。", false);
                     return;
                 }
                 retryCount[0]++;
@@ -1534,14 +1534,13 @@ public class ChatActivity extends Activity {
                         runOnUiThread(new Runnable() {
                             @Override public void run() {
                                 if (result.success) {
-                                    statusText.setText("视频生成成功！");
-                                    // 展示视频播放对话框
-                                    showVideoResultDialog(result.videoUrl, dialogWrap);
+                                    addMessage("视频生成成功！任务ID: " + taskId + "\n" + result.videoUrl, false);
+                                    // 展示视频播放对话框（如果用户还开着页面）
+                                    showVideoResultDialog(result.videoUrl, null);
                                 } else if (result.error != null) {
-                                    statusText.setText("生成失败: " + result.error);
+                                    addMessage("视频生成失败（任务ID: " + taskId + "）: " + result.error, false);
                                 } else {
                                     // 继续轮询
-                                    statusText.setText("视频生成中... (" + retryCount[0] + "/" + maxRetries + ")");
                                     handler.postDelayed(this, delayMs);
                                 }
                             }
