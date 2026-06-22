@@ -416,7 +416,7 @@ public class AI {
         String motionPrompt = (prompt == null || prompt.isEmpty()) ? "画面缓缓流动，柔和自然" : prompt;
 
         StringBuilder body = new StringBuilder();
-        body.append("{\"model\":\"cogvideox-2\",\"image_url\":\"")
+        body.append("{\"model\":\"cogvideox-3\",\"image_url\":\"")
             .append(jsonEscape(imageUrl)).append("\"");
         body.append(",\"prompt\":\"").append(jsonEscape(motionPrompt)).append("\"");
         body.append(",\"duration\":5,\"quality\":\"speed\"}");
@@ -444,7 +444,7 @@ public class AI {
             return result;
         }
         try {
-            URL url = new URL(ZHIPU_ASYNC_RESULT_ENDPOINT + "?id=" + taskId);
+            URL url = new URL(ZHIPU_ASYNC_RESULT_ENDPOINT + "/" + taskId);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(10000);
