@@ -14,7 +14,7 @@ else
     fi
 fi
 export PATH=$JAVA_HOME/bin:$PATH
-export ANDROID_HOME=/opt/android-sdk
+export ANDROID_HOME=${ANDROID_HOME:-/tmp/android-sdk}
 BUILD_TOOLS=$ANDROID_HOME/build-tools/34.0.0
 PLATFORM=$ANDROID_HOME/platforms/android-34
 KEYSTORE=/workspace/helloworld/release.keystore

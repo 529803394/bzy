@@ -59,6 +59,7 @@ public class ChatActivity extends Activity {
     // 背景动画相关
     private FrameLayout bgRoot;
     private ImageView bgImage; // 背景图片（智能配图后可替换）
+    private View gradOverlay;   // 渐变叠加层
     private long bgAnimStart;
     private android.os.Handler bgHandler;
     private Runnable bgAnim;
@@ -109,7 +110,7 @@ public class ChatActivity extends Activity {
         bgRoot.addView(bgImage);
 
         // 渐变叠加层（放在图片上方、文字区域不透明度最大，边缘渐隐）
-        final View gradOverlay = new View(this);
+        gradOverlay = new View(this);
         gradOverlay.setLayoutParams(new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT));
@@ -725,7 +726,7 @@ public class ChatActivity extends Activity {
     }
 
     // 异步加载背景图片
-    private static class LoadBgImageTask extends AsyncTask<String, Void, android.graphics.Bitmap> {
+    private class LoadBgImageTask extends AsyncTask<String, Void, android.graphics.Bitmap> {
         private final ImageView target;
         LoadBgImageTask(ImageView iv) { this.target = iv; }
 
@@ -760,8 +761,11 @@ public class ChatActivity extends Activity {
             if (result != null && target != null) {
                 target.setImageBitmap(result);
                 target.setVisibility(View.VISIBLE);
-                // 触发渐变叠加层重新计算（背景图显示时需要让动画叠加层继续存在）
-                target.postInvalidate();
+                // 重新启动背景动画，让渐变叠加层使用图片模式
+                bgRoot.post(() -> {
+                    if (bgHandler != null) bgHandler.removeCallbacks(bgAnim);
+                    startBgAnimation(gradOverlay, bgImage);
+                });
             }
         }
     }

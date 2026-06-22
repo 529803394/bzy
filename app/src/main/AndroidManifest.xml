@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.example.helloworld"
-    android:versionCode="22308"
-    android:versionName="2.23.8"
+    android:versionCode="22309"
+    android:versionName="2.23.9"
     android:installLocation="auto">
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34" />
