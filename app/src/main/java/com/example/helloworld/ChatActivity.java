@@ -1162,7 +1162,7 @@ public class ChatActivity extends Activity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) panel.setBackground(pbg);
         else panel.setBackgroundDrawable(pbg);
 
-        String[] items = new String[] { "📋  详情", "🧹  清除历史", "📤  分享", "🖼  生成背景图" };
+        String[] items = new String[] { "📋  详情", "🧹  清除历史", "📤  分享", "🖼  生成背景图", "🔧  调试日志" };
         for (int i = 0; i < items.length; i++) {
             TextView tv = new TextView(this);
             tv.setText(items[i]);
@@ -1179,7 +1179,8 @@ public class ChatActivity extends Activity {
                 if (idx == 0) showSoundDetailDialog();
                 else if (idx == 1) showClearHistoryDialog();
                 else if (idx == 2) doShare();
-                else showArtDialog();
+                else if (idx == 3) showArtDialog();
+                else showDebugLogDialog();
             });
             panel.addView(tv);
             if (i < items.length - 1) {
@@ -1274,6 +1275,131 @@ public class ChatActivity extends Activity {
 
         confirmWrap.addView(panel);
         bgRoot.addView(confirmWrap);
+    }
+
+    // 调试日志弹窗（每秒刷新，显示最近10条HTTP请求）
+    private void showDebugLogDialog() {
+        boolean dark = isDarkMode(this);
+        int textMain = dark ? Color.WHITE : Color.parseColor("#202020");
+        int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#999999");
+        int panelBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
+        int logBg = dark ? Color.parseColor("#121212") : Color.parseColor("#F5F5F5");
+        int logText = dark ? Color.parseColor("#10B981") : Color.parseColor("#1A7F32");
+
+        final FrameLayout dialogWrap = new FrameLayout(this);
+        dialogWrap.setBackgroundColor(Color.parseColor("#88000000"));
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setBackgroundColor(panelBg);
+        panel.setPadding(dip2px(16), dip2px(16), dip2px(16), dip2px(16));
+        FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(dip2px(340), FrameLayout.LayoutParams.WRAP_CONTENT);
+        plp.gravity = Gravity.CENTER;
+        panel.setLayoutParams(plp);
+        GradientDrawable pbg = new GradientDrawable();
+        pbg.setColor(panelBg);
+        pbg.setCornerRadius(dip2px(12));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) panel.setBackground(pbg);
+        else panel.setBackgroundDrawable(pbg);
+
+        // 标题栏
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams trlp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        titleRow.setLayoutParams(trlp);
+
+        TextView title = new TextView(this);
+        title.setText("🔧 HTTP 调试日志");
+        title.setTextSize(16);
+        title.setTextColor(textMain);
+        title.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        titleRow.addView(title);
+
+        Button clearBtn = new Button(this);
+        clearBtn.setText("清空");
+        clearBtn.setTextSize(12);
+        clearBtn.setTextColor(Color.parseColor("#FF6B6B"));
+        clearBtn.setBackgroundColor(Color.TRANSPARENT);
+        clearBtn.setOnClickListener(v -> HttpLogger.clear());
+        titleRow.addView(clearBtn);
+        panel.addView(titleRow);
+
+        // 日志文本区
+        final ScrollView logScroll = new ScrollView(this);
+        logScroll.setBackgroundColor(logBg);
+        LinearLayout.LayoutParams lsp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dip2px(240));
+        lsp.topMargin = dip2px(10);
+        logScroll.setLayoutParams(lsp);
+
+        final TextView logTextView = new TextView(this);
+        logTextView.setTextSize(11);
+        logTextView.setTextColor(logText);
+        logTextView.setPadding(dip2px(8), dip2px(8), dip2px(8), dip2px(8));
+        logTextView.setText("暂无日志...\n\n提示：点击任意HTTP请求后重新进入聊天，刷新页面可触发新的HTTP调用");
+        logScroll.addView(logTextView);
+        panel.addView(logScroll);
+
+        // 刷新提示
+        TextView hint = new TextView(this);
+        hint.setText("每秒自动刷新");
+        hint.setTextSize(11);
+        hint.setTextColor(textSub);
+        hint.setGravity(Gravity.CENTER);
+        hint.setPadding(0, dip2px(8), 0, 0);
+        panel.addView(hint);
+
+        // 关闭按钮
+        Button closeBtn = new Button(this);
+        closeBtn.setText("关闭");
+        closeBtn.setTextSize(14);
+        closeBtn.setTextColor(Color.parseColor("#10AEFF"));
+        closeBtn.setBackgroundColor(Color.TRANSPARENT);
+        LinearLayout.LayoutParams clp2 = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        clp2.topMargin = dip2px(8);
+        closeBtn.setLayoutParams(clp2);
+        final android.os.Handler refreshHandler = new android.os.Handler();
+        closeBtn.setOnClickListener(v -> {
+            refreshHandler.removeCallbacksAndMessages(null);
+            bgRoot.removeView(dialogWrap);
+        });
+        panel.addView(closeBtn);
+
+        dialogWrap.addView(panel);
+        bgRoot.addView(dialogWrap);
+
+        // 每秒刷新日志
+        refreshHandler.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (dialogWrap.getParent() == null) {
+                    refreshHandler.removeCallbacks(this);
+                    return;
+                }
+                StringBuilder sb = new StringBuilder();
+                java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault());
+                for (HttpLogger.HttpLogEntry entry : HttpLogger.getLogs()) {
+                    String time = sdf.format(new java.util.Date(entry.timestamp));
+                    String code = entry.responseCode > 0 ? String.valueOf(entry.responseCode) : "ERR";
+                    String err = entry.error != null ? " ⚠️" + entry.error : "";
+                    String shortUrl = entry.url.length() > 60 ? entry.url.substring(0, 60) + "..." : entry.url;
+                    sb.append("[").append(time).append("] ")
+                        .append(entry.method).append(" ").append(code)
+                        .append(" ").append(entry.durationMs).append("ms").append(err).append("\n")
+                        .append(shortUrl).append("\n\n");
+                }
+                if (sb.length() == 0) {
+                    logTextView.setText("暂无日志...\n\n提示：进行聊天交互或生成背景图后会记录HTTP请求");
+                } else {
+                    logTextView.setText(sb.toString());
+                    // 滚动到底部
+                    logScroll.post(() -> logScroll.fullScroll(ScrollView.FOCUS_DOWN));
+                }
+                refreshHandler.postDelayed(this, 1000);
+            }
+        }, 500); // 首次延迟0.5秒立即刷新
     }
 
     // 智能配图弹窗

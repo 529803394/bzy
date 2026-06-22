@@ -443,6 +443,8 @@ public class AI {
             result.error = "任务ID为空";
             return result;
         }
+        long start = System.currentTimeMillis();
+        int code = -1;
         try {
             URL url = new URL(ZHIPU_ASYNC_RESULT_ENDPOINT + "/" + taskId);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -450,7 +452,7 @@ public class AI {
             conn.setConnectTimeout(10000);
             conn.setReadTimeout(30000);
             conn.setRequestProperty("Authorization", "Bearer " + ZHIPU_KEY);
-            int code = conn.getResponseCode();
+            code = conn.getResponseCode();
             if (code >= 200 && code < 300) {
                 java.io.BufferedReader br = new java.io.BufferedReader(
                     new java.io.InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
@@ -477,7 +479,9 @@ public class AI {
                 result.error = "查询失败: HTTP " + code;
             }
             conn.disconnect();
+            HttpLogger.log("GET", url.toString(), code, System.currentTimeMillis() - start, result.error);
         } catch (Exception e) {
+            HttpLogger.log("GET", ZHIPU_ASYNC_RESULT_ENDPOINT + "/" + taskId, code, System.currentTimeMillis() - start, e.getMessage());
             result.error = "查询异常: " + e.getMessage();
         }
         return result;
@@ -522,6 +526,8 @@ public class AI {
     // 与 postJson 类似，但返回完整原始响应（用于图片生成）
     private static String postJsonRaw(String endpoint, String key, String body) {
         HttpURLConnection conn = null;
+        long start = System.currentTimeMillis();
+        int code = -1;
         try {
             URL url = new URL(endpoint);
             conn = (HttpURLConnection) url.openConnection();
@@ -540,7 +546,7 @@ public class AI {
             os.flush();
             os.close();
 
-            int code = conn.getResponseCode();
+            code = conn.getResponseCode();
             BufferedReader br;
             if (code >= 200 && code < 300) {
                 br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
@@ -548,6 +554,7 @@ public class AI {
                 try {
                     br = new BufferedReader(new InputStreamReader(conn.getErrorStream(), StandardCharsets.UTF_8));
                 } catch (Exception ex) {
+                    HttpLogger.log("POST", endpoint, code, System.currentTimeMillis() - start, ex.getMessage());
                     return null;
                 }
             }
@@ -555,8 +562,10 @@ public class AI {
             String line;
             while ((line = br.readLine()) != null) sb.append(line);
             br.close();
+            HttpLogger.log("POST", endpoint, code, System.currentTimeMillis() - start, null);
             return sb.toString();
         } catch (Throwable e) {
+            HttpLogger.log("POST", endpoint, code, System.currentTimeMillis() - start, e.getMessage());
             return null;
         } finally {
             if (conn != null) try { conn.disconnect(); } catch (Throwable ignored) {}
