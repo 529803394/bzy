@@ -12,6 +12,7 @@ import android.os.Environment;
 import android.provider.MediaStore;
 import android.view.Gravity;
 import android.view.View;
+import android.view.MotionEvent;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.Button;
@@ -1678,11 +1679,8 @@ public class MainActivity extends Activity {
         container.addView(makeMenuRow("⚙️", "设置", "主题/后台播放", v -> showSettingsDialog()));
         container.addView(lineSep());
         container.addView(makeMenuRow("🔄", "检查更新", "当前版本: " + UpdateChecker.getCurrentVersion(this), v -> doCheckUpdate()));
-        container.addView(makeMenuRow("➕", "添加白噪音", "添加自定义音频URL", v -> showAddDialog()));
         container.addView(lineSep());
-        container.addView(makeMenuRow("📥", "导入白噪音", "从备份文件恢复", v -> doImportSounds()));
-        container.addView(lineSep());
-        container.addView(makeMenuRow("📋", "管理自定义", "修改 / 删除自定义白噪音", v -> showManageDialog()));
+        container.addView(makeMenuRow("📋", "自定义白噪音", "管理 / 添加 / 导入 / 导出", v -> showCustomSoundsActivity()));
 
         contentArea.addView(sv);
     }
@@ -2226,12 +2224,14 @@ public class MainActivity extends Activity {
     }
 
     // -------- 管理自定义弹窗 --------
-    private void showManageDialog() {
+    // 自定义白噪音全屏管理页面
+    private void showCustomSoundsActivity() {
         final boolean dark = isDarkMode(this);
         final int textMain = dark ? Color.WHITE : Color.BLACK;
         final int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#999999");
-        final int panelBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
-        final int cardBg = dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#F8F8F8");
+        final int panelBg = dark ? Color.parseColor("#121212") : Color.parseColor("#F7F7F7");
+        final int cardBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
+        final int iconActive = Color.parseColor("#10AEFF");
 
         List<SoundStore.Sound> customs = new ArrayList<>();
         for (SoundStore.Sound s : SoundStore.getAll(this)) {
@@ -2242,66 +2242,156 @@ public class MainActivity extends Activity {
         container.setLayoutParams(new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT));
-        container.setBackgroundColor(Color.parseColor("#AA000000"));
+        container.setBackgroundColor(panelBg);
 
-        ScrollView sv = new ScrollView(this);
-        FrameLayout.LayoutParams svp = new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT);
-        svp.gravity = Gravity.CENTER;
-        svp.width = dip2px(320);
-        sv.setLayoutParams(svp);
+        // 顶部标题栏
+        LinearLayout titleBar = new LinearLayout(this);
+        titleBar.setOrientation(LinearLayout.HORIZONTAL);
+        titleBar.setGravity(Gravity.CENTER_VERTICAL);
+        FrameLayout.LayoutParams tbp = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, dip2px(56));
+        titleBar.setLayoutParams(tbp);
+        titleBar.setBackgroundColor(cardBg);
+        titleBar.setPadding(dip2px(12), 0, dip2px(12), 0);
 
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setBackgroundColor(panelBg);
-        panel.setPadding(dip2px(14), dip2px(18), dip2px(14), dip2px(12));
-        sv.addView(panel);
+        TextView backBtn = new TextView(this);
+        backBtn.setText("<");
+        backBtn.setTextSize(22);
+        backBtn.setTextColor(iconActive);
+        backBtn.setPadding(dip2px(8), 0, dip2px(8), 0);
+        backBtn.setOnClickListener(v -> {
+            if (container.getParent() != null) {
+                ((ViewGroup) container.getParent()).removeView(container);
+            }
+        });
+        titleBar.addView(backBtn);
 
         TextView title = new TextView(this);
-        title.setText("管理自定义白噪音");
+        title.setText("自定义白噪音");
         title.setTextSize(18);
         title.setTextColor(textMain);
-        title.setGravity(Gravity.CENTER);
-        title.getPaint().setFakeBoldText(true);
-        title.setPadding(0, 0, 0, dip2px(14));
-        panel.addView(title);
+        title.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        titleBar.addView(title);
 
-        // 导出按钮
-        if (!customs.isEmpty()) {
-            Button exportBtn = new Button(this);
-            exportBtn.setText("📤 导出全部到下载目录");
-            exportBtn.setTextSize(14);
-            exportBtn.setTextColor(Color.WHITE);
-            exportBtn.setBackgroundColor(Color.parseColor("#10AEFF"));
-            exportBtn.setPadding(dip2px(12), dip2px(8), dip2px(12), dip2px(8));
-            LinearLayout.LayoutParams expLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            expLp.topMargin = dip2px(4);
-            expLp.bottomMargin = dip2px(8);
-            exportBtn.setLayoutParams(expLp);
-            exportBtn.setOnClickListener(v -> doExportSounds());
-            panel.addView(exportBtn);
+        // 左滑返回手势
+        final float[] startX = {0};
+        container.setOnTouchListener(new View.OnTouchListener() {
+            @Override public boolean onTouch(View v, MotionEvent event) {
+                if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                    startX[0] = event.getX();
+                } else if (event.getAction() == MotionEvent.ACTION_UP) {
+                    float dx = event.getX() - startX[0];
+                    if (dx < -dip2px(80) && event.getY() > 0 && event.getY() < dip2px(56)) {
+                        // 左滑超过80dp且在顶部区域
+                        if (container.getParent() != null) {
+                            ((ViewGroup) container.getParent()).removeView(container);
+                        }
+                    }
+                }
+                return false;
+            }
+        });
+        container.addView(titleBar);
+
+        // 三个功能按钮
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setGravity(Gravity.CENTER);
+        actions.setPadding(dip2px(16), dip2px(12), dip2px(16), dip2px(12));
+        LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        actions.setLayoutParams(ap);
+        actions.setBackgroundColor(cardBg);
+        container.addView(actions);
+
+        // 辅助：创建功能按钮
+        java.util.Map<String, Integer> actionItems = new java.util.LinkedHashMap<>();
+        actionItems.put("➕", 0);   // 添加白噪音
+        actionItems.put("📥", 1);   // 导入白噪音
+        actionItems.put("📤", 2);   // 导出白噪音
+
+        final View[] actionBtns = new View[3];
+        int idx = 0;
+        for (java.util.Map.Entry<String, Integer> entry : actionItems.entrySet()) {
+            final int actionIdx = entry.getValue();
+            LinearLayout btnWrap = new LinearLayout(this);
+            btnWrap.setOrientation(LinearLayout.VERTICAL);
+            btnWrap.setGravity(Gravity.CENTER);
+            btnWrap.setPadding(dip2px(16), dip2px(10), dip2px(16), dip2px(10));
+            LinearLayout.LayoutParams bwp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+            btnWrap.setLayoutParams(bwp);
+
+            TextView icon = new TextView(this);
+            icon.setText(entry.getKey());
+            icon.setTextSize(24);
+            icon.setGravity(Gravity.CENTER);
+            btnWrap.addView(icon);
+
+            TextView label = new TextView(this);
+            label.setText(new String[]{"添加白噪音", "导入白噪音", "导出白噪音"}[actionIdx]);
+            label.setTextSize(11);
+            label.setTextColor(textSub);
+            label.setGravity(Gravity.CENTER);
+            label.setPadding(0, dip2px(4), 0, 0);
+            btnWrap.addView(label);
+
+            final int finalIdx = idx;
+            btnWrap.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    if (actionIdx == 0) showAddDialog();
+                    else if (actionIdx == 1) doImportSounds();
+                    else if (actionIdx == 2) {
+                        if (customs.isEmpty()) {
+                            Toast.makeText(MainActivity.this, "没有可导出的白噪音", Toast.LENGTH_SHORT).show();
+                        } else {
+                            doExportSounds();
+                        }
+                    }
+                }
+            });
+            actions.addView(btnWrap);
+            actionBtns[finalIdx] = btnWrap;
+            idx++;
         }
+
+        // 分割线
+        View div = new View(this);
+        div.setBackgroundColor(dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#E5E5E5"));
+        FrameLayout.LayoutParams divp = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, dip2px(0.5f));
+        divp.gravity = Gravity.BOTTOM;
+        divp.bottomMargin = dip2px(56); // 留底部空间
+        div.setLayoutParams(divp);
+
+        // 列表区域
+        ScrollView sv = new ScrollView(this);
+        FrameLayout.LayoutParams svp = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, 0, 1);
+        sv.setLayoutParams(svp);
+
+        LinearLayout listPanel = new LinearLayout(this);
+        listPanel.setOrientation(LinearLayout.VERTICAL);
+        listPanel.setPadding(0, dip2px(8), 0, dip2px(80));
+        sv.addView(listPanel);
 
         if (customs.isEmpty()) {
             TextView empty = new TextView(this);
-            empty.setText("暂无自定义白噪音");
+            empty.setText("暂无自定义白噪音\n点击「添加白噪音」开始");
             empty.setTextSize(14);
             empty.setTextColor(textSub);
             empty.setGravity(Gravity.CENTER);
-            empty.setPadding(0, dip2px(20), 0, dip2px(20));
-            panel.addView(empty);
+            empty.setPadding(dip2px(20), dip2px(40), dip2px(20), dip2px(40));
+            listPanel.addView(empty);
         } else {
             for (final SoundStore.Sound s : customs) {
                 LinearLayout row = new LinearLayout(this);
                 row.setOrientation(LinearLayout.VERTICAL);
                 row.setBackgroundColor(cardBg);
-                row.setPadding(dip2px(12), dip2px(12), dip2px(12), dip2px(12));
+                row.setPadding(dip2px(16), dip2px(12), dip2px(16), dip2px(12));
                 LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT);
-                rlp.bottomMargin = dip2px(8);
+                rlp.bottomMargin = dip2px(1);
                 row.setLayoutParams(rlp);
 
                 TextView n = new TextView(this);
@@ -2314,7 +2404,7 @@ public class MainActivity extends Activity {
                 url.setText(s.url);
                 url.setTextSize(11);
                 url.setTextColor(textSub);
-                url.setPadding(0, dip2px(4), 0, dip2px(2));
+                url.setPadding(0, dip2px(4), 0, dip2px(4));
                 row.addView(url);
 
                 if (s.bgImageUrl != null && !s.bgImageUrl.isEmpty()) {
@@ -2322,54 +2412,14 @@ public class MainActivity extends Activity {
                     bgTag.setText("🖼 背景图已设置");
                     bgTag.setTextSize(11);
                     bgTag.setTextColor(Color.parseColor("#4dd0e1"));
-                    bgTag.setPadding(0, dip2px(2), 0, dip2px(8));
-                    row.addView(bgTag);
-                } else {
-                    TextView bgTag = new TextView(this);
-                    bgTag.setText("无自定义背景");
-                    bgTag.setTextSize(11);
-                    bgTag.setTextColor(dark ? Color.parseColor("#555555") : Color.parseColor("#aaaaaa"));
-                    bgTag.setPadding(0, dip2px(2), 0, dip2px(8));
                     row.addView(bgTag);
                 }
 
                 LinearLayout btns = new LinearLayout(this);
                 btns.setOrientation(LinearLayout.HORIZONTAL);
                 btns.setGravity(Gravity.RIGHT);
-                LinearLayout.LayoutParams btp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
-                btns.setLayoutParams(btp);
-
-                // 下载按钮（优先显示）
-                Button downloadBtn = new Button(this);
-                final boolean hasLocal = s.localPath != null && !s.localPath.isEmpty()
-                    && new java.io.File(s.localPath).exists();
-                if (hasLocal) {
-                    downloadBtn.setText("✓ 已下载");
-                    downloadBtn.setTextSize(12);
-                    downloadBtn.setTextColor(Color.parseColor("#888888"));
-                    downloadBtn.setBackgroundColor(Color.parseColor("#444444"));
-                } else {
-                    downloadBtn.setText("⬇ 下载");
-                    downloadBtn.setTextSize(12);
-                    downloadBtn.setTextColor(Color.WHITE);
-                    downloadBtn.setBackgroundColor(Color.parseColor("#34C759"));
-                }
-                downloadBtn.setPadding(dip2px(12), dip2px(4), dip2px(12), dip2px(4));
-                LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
-                dlp.rightMargin = dip2px(8);
-                downloadBtn.setLayoutParams(dlp);
-                downloadBtn.setOnClickListener(v -> {
-                    if (hasLocal) {
-                        Toast.makeText(MainActivity.this, "音频已缓存到本地", Toast.LENGTH_SHORT).show();
-                    } else {
-                        downloadSoundToLocal(s, container);
-                    }
-                });
-                btns.addView(downloadBtn);
+                btns.setPadding(0, dip2px(8), 0, 0);
+                row.addView(btns);
 
                 Button edit = new Button(this);
                 edit.setText("修改");
@@ -2378,14 +2428,10 @@ public class MainActivity extends Activity {
                 edit.setBackgroundColor(Color.parseColor("#10AEFF"));
                 edit.setPadding(dip2px(12), dip2px(4), dip2px(12), dip2px(4));
                 LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
                 ep.rightMargin = dip2px(8);
                 edit.setLayoutParams(ep);
-                edit.setOnClickListener(v -> {
-                    ((ViewGroup) container.getParent()).removeView(container);
-                    showEditDialog(s.id);
-                });
+                edit.setOnClickListener(v -> showEditDialog(s.id));
                 btns.addView(edit);
 
                 Button del = new Button(this);
@@ -2396,36 +2442,28 @@ public class MainActivity extends Activity {
                 del.setPadding(dip2px(12), dip2px(4), dip2px(12), dip2px(4));
                 del.setOnClickListener(v -> {
                     SoundStore.deleteCustom(MainActivity.this, s.id);
-                    ((ViewGroup) container.getParent()).removeView(container);
                     Toast.makeText(MainActivity.this, "已删除", Toast.LENGTH_SHORT).show();
                     refresh();
+                    // 重新显示本页面
+                    if (container.getParent() != null) {
+                        ((ViewGroup) container.getParent()).removeView(container);
+                    }
+                    showCustomSoundsActivity();
                 });
                 btns.addView(del);
 
-                row.addView(btns);
-                panel.addView(row);
+                listPanel.addView(row);
             }
         }
 
-        Button close = new Button(this);
-        close.setText("关闭");
-        close.setTextSize(14);
-        close.setTextColor(Color.parseColor("#666666"));
-        close.setBackgroundColor(Color.TRANSPARENT);
-        LinearLayout.LayoutParams clp2 = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dip2px(40));
-        clp2.topMargin = dip2px(8);
-        close.setLayoutParams(clp2);
-        close.setOnClickListener(v -> {
-            ((ViewGroup) container.getParent()).removeView(container);
-        });
-        panel.addView(close);
-
+        container.addView(div);
         container.addView(sv);
+
         ViewGroup root2 = (ViewGroup) getWindow().getDecorView()
             .findViewById(android.R.id.content);
         root2.addView(container);
     }
+
 
     private void showEditDialog(final String itemId) {
         final SoundStore.Sound s = SoundStore.findById(this, itemId);
