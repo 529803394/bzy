@@ -1675,6 +1675,7 @@ public class MainActivity extends Activity {
         // 功能列表
         container.addView(makeMenuRow("⚙️", "设置", "主题/后台播放", v -> showSettingsDialog()));
         container.addView(lineSep());
+        container.addView(makeMenuRow("🔄", "检查更新", "当前版本: " + UpdateChecker.getCurrentVersion(this), v -> doCheckUpdate()));
         container.addView(makeMenuRow("➕", "添加白噪音", "添加自定义音频URL", v -> showAddDialog()));
         container.addView(lineSep());
         container.addView(makeMenuRow("📥", "导入白噪音", "从备份文件恢复", v -> doImportSounds()));
@@ -1951,47 +1952,6 @@ public class MainActivity extends Activity {
         bgModeHint.setGravity(Gravity.CENTER);
         bgModeHint.setPadding(0, dip2px(6), 0, 0);
         panel.addView(bgModeHint);
-
-        // 检查更新按钮
-        final TextView ver = new TextView(this);
-        final String currentVer = UpdateChecker.getCurrentVersion(this);
-        ver.setText("当前版本: " + currentVer);
-        ver.setTextSize(12);
-        ver.setTextColor(textSub);
-        ver.setGravity(Gravity.CENTER);
-        ver.setPadding(0, dip2px(12), 0, 0);
-        panel.addView(ver);
-
-        Button checkUpdate = new Button(this);
-        checkUpdate.setText("🔄 检查更新");
-        checkUpdate.setTextSize(13);
-        checkUpdate.setTextColor(Color.WHITE);
-        checkUpdate.setBackgroundColor(Color.parseColor("#10AEFF"));
-        LinearLayout.LayoutParams cup = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dip2px(38));
-        cup.topMargin = dip2px(6);
-        checkUpdate.setLayoutParams(cup);
-        checkUpdate.setOnClickListener(v -> {
-            checkUpdate.setText("检测中...");
-            checkUpdate.setEnabled(false);
-            UpdateChecker.check(MainActivity.this, new UpdateChecker.UpdateCallback() {
-                @Override
-                public void onResult(UpdateChecker.UpdateInfo info) {
-                    checkUpdate.setText("🔄 检查更新");
-                    checkUpdate.setEnabled(true);
-                    if (info.errorMessage != null) {
-                        Toast.makeText(MainActivity.this, "检查失败: " + info.errorMessage, Toast.LENGTH_SHORT).show();
-                    } else if (info.isUpdateAvailable) {
-                        ver.setText("最新版本: " + info.latestVersion);
-                        UpdateChecker.openDownload(MainActivity.this, info.downloadUrl);
-                    } else {
-                        ver.setText("已是最新版本: " + currentVer);
-                        Toast.makeText(MainActivity.this, "当前已是最新版本", Toast.LENGTH_SHORT).show();
-                    }
-                }
-            });
-        });
-        panel.addView(checkUpdate);
 
         // 分割线
         View divider3 = new View(this);
@@ -2724,6 +2684,21 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             Toast.makeText(this, "导入失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private void doCheckUpdate() {
+        UpdateChecker.check(this, new UpdateChecker.UpdateCallback() {
+            @Override
+            public void onResult(UpdateChecker.UpdateInfo info) {
+                if (info.errorMessage != null) {
+                    Toast.makeText(MainActivity.this, "检查失败: " + info.errorMessage, Toast.LENGTH_SHORT).show();
+                } else if (info.isUpdateAvailable) {
+                    UpdateChecker.openDownload(MainActivity.this, info.downloadUrl);
+                } else {
+                    Toast.makeText(MainActivity.this, "当前已是最新版本", Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
     }
 
     // -------- onActivityResult --------
