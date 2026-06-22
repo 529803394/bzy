@@ -24,6 +24,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.VideoView;
 import android.widget.Toast;
 
 import java.io.InputStream;
@@ -59,6 +60,7 @@ public class ChatActivity extends Activity {
     // 背景动画相关
     private FrameLayout bgRoot;
     private ImageView bgImage; // 背景图片（智能配图后可替换）
+    private VideoView bgVideo; // 背景视频（智谱AI生成后可替换）
     private View gradOverlay;   // 渐变叠加层
     private long bgAnimStart;
     private android.os.Handler bgHandler;
@@ -109,7 +111,15 @@ public class ChatActivity extends Activity {
         bgImage.setVisibility(View.INVISIBLE);
         bgRoot.addView(bgImage);
 
-        // 渐变叠加层（放在图片上方、文字区域不透明度最大，边缘渐隐）
+        // 背景视频层（如果设置了背景视频）
+        bgVideo = new VideoView(this);
+        bgVideo.setLayoutParams(new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT));
+        bgVideo.setVisibility(View.INVISIBLE);
+        bgRoot.addView(bgVideo);
+
+        // 渐变叠加层（放在图片/视频上方、文字区域不透明度最大，边缘渐隐）
         gradOverlay = new View(this);
         gradOverlay.setLayoutParams(new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
@@ -388,9 +398,24 @@ public class ChatActivity extends Activity {
         // 初始化背景流动动画（渐变叠加在图片或纯色背景上）
         startBgAnimation(gradOverlay, bgImage);
 
-        // 异步加载自定义背景图片
-        if (sound.bgImageUrl != null && !sound.bgImageUrl.isEmpty()) {
+        // 根据设置决定显示背景图还是背景视频
+        int bgDisplayMode = getSharedPreferences("whitenoise_settings", MODE_PRIVATE)
+            .getInt("bg_display_mode", 0); // 0=图片优先, 1=视频优先
+
+        // 视频优先模式：有视频URL则显示视频，否则显示图片
+        // 图片优先模式：有图片URL则显示图片，否则显示视频
+        boolean hasVideo = sound.bgVideoUrl != null && !sound.bgVideoUrl.isEmpty();
+        boolean hasImage = sound.bgImageUrl != null && !sound.bgImageUrl.isEmpty();
+
+        if (bgDisplayMode == 1 && hasVideo) {
+            // 视频优先模式且有视频
+            loadBackgroundVideo(sound.bgVideoUrl);
+        } else if (hasImage) {
+            // 图片优先模式或有图片但无视频
             new LoadBgImageTask(bgImage).execute(sound.bgImageUrl);
+        } else if (hasVideo) {
+            // 无图片但有视频
+            loadBackgroundVideo(sound.bgVideoUrl);
         }
 
         // 渲染已有消息（根据主题更新气泡）
@@ -639,7 +664,7 @@ public class ChatActivity extends Activity {
     // -------- 背景动画（缓慢的颜色渐变流动）--------
     private GradientDrawable bgDrawable;
 
-    private void startBgAnimation(final View gradOverlay, final ImageView bgImage) {
+    private void startBgAnimation(final View gradOverlay, final View bgMediaView) {
         final boolean dark = isDarkMode(this);
         final int[] darkColors = sound.getChatBgColors();        // 2 colors
         final int[] lightColors = sound.getChatBgColorsLight();  // 3 colors
@@ -656,18 +681,19 @@ public class ChatActivity extends Activity {
             c2 = lightColors[2];
         }
 
-        // 判断是否有自定义背景图片
-        final boolean hasBgImage = (sound.bgImageUrl != null && !sound.bgImageUrl.isEmpty());
+        // 判断是否有自定义背景媒体（图片或视频）
+        final boolean hasBgMedia = (sound.bgImageUrl != null && !sound.bgImageUrl.isEmpty())
+            || (sound.bgVideoUrl != null && !sound.bgVideoUrl.isEmpty());
 
-        if (hasBgImage) {
-            // 图片模式：渐变两端压暗、中间透明 → 叠加在图片上方
+        if (hasBgMedia) {
+            // 图片/视频模式：渐变两端压暗、中间透明 → 叠加在媒体上方
             final int topDark = mixColor(c0, Color.BLACK, 0.5f);
             final int botDark = mixColor(c2, Color.BLACK, 0.5f);
             bgDrawable = new GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[]{topDark, Color.TRANSPARENT, Color.TRANSPARENT, botDark});
         } else {
-            // 无图片：全不透明渐变
+            // 无媒体：全不透明渐变
             bgDrawable = new GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[]{c0, c1, c2, c1});
@@ -708,7 +734,7 @@ public class ChatActivity extends Activity {
                 int col2 = mixColor(c1, c2, phase2);
                 int col3 = mixColor(c0, c2, phase3);
 
-                if (hasBgImage) {
+                if (hasBgMedia) {
                     int td = mixColor(col1, Color.BLACK, 0.5f);
                     int bd = mixColor(col3, Color.BLACK, 0.5f);
                     bgDrawable.setColors(new int[]{td, Color.TRANSPARENT, Color.TRANSPARENT, bd});
@@ -723,6 +749,45 @@ public class ChatActivity extends Activity {
             }
         };
         bgHandler.post(bgAnim);
+    }
+
+    // 加载背景视频（网络URL或本地路径）
+    private void loadBackgroundVideo(String videoUrl) {
+        if (videoUrl == null || videoUrl.isEmpty()) return;
+        // 优先本地缓存
+        String localPath = sound.bgVideoLocalPath;
+        if (localPath != null && !localPath.isEmpty()) {
+            java.io.File f = new java.io.File(localPath);
+            if (f.exists()) {
+                playBackgroundVideo(localPath);
+                return;
+            }
+        }
+        // 网络URL
+        playBackgroundVideo(videoUrl);
+    }
+
+    // 播放背景视频（循环播放）
+    private void playBackgroundVideo(String path) {
+        bgVideo.setVideoPath(path);
+        bgVideo.setOnPreparedListener(mp -> {
+            mp.setLooping(true);
+            mp.setVolume(0f, 0f); // 静音
+            bgVideo.setVisibility(View.VISIBLE);
+            bgImage.setVisibility(View.INVISIBLE);
+            bgVideo.start();
+            // 重新启动动画（视频模式下叠加层仍需要）
+            if (bgHandler != null) bgHandler.removeCallbacks(bgAnim);
+            startBgAnimation(gradOverlay, bgVideo);
+        });
+        bgVideo.setOnErrorListener((mp, what, extra) -> {
+            // 视频播放失败，fallback到图片
+            bgVideo.setVisibility(View.INVISIBLE);
+            if (sound.bgImageUrl != null && !sound.bgImageUrl.isEmpty()) {
+                new LoadBgImageTask(bgImage).execute(sound.bgImageUrl);
+            }
+            return true;
+        });
     }
 
     // 异步加载背景图片
@@ -1393,6 +1458,46 @@ public class ChatActivity extends Activity {
         });
         panel.addView(okBtn);
 
+        // 生成背景图视频按钮（仅在已有背景图时可点击）
+        Button videoBtn = new Button(this);
+        videoBtn.setText("🎬 生成背景图视频");
+        videoBtn.setTextSize(14);
+        videoBtn.setTextColor(Color.WHITE);
+        videoBtn.setBackgroundColor(Color.parseColor("#FF6B6B"));
+        videoBtn.setPadding(dip2px(16), dip2px(10), dip2px(16), dip2px(10));
+        LinearLayout.LayoutParams videoLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        videoLp.bottomMargin = dip2px(8);
+        videoBtn.setLayoutParams(videoLp);
+        videoBtn.setOnClickListener(v -> {
+            // 获取背景图URL（优先预览区，其次sound.bgImageUrl）
+            Object tag = previewImage.getTag();
+            String bgUrl = (tag instanceof String) ? (String) tag : sound.bgImageUrl;
+            if (bgUrl == null || bgUrl.isEmpty()) {
+                Toast.makeText(ChatActivity.this, "请先生成或确认背景图", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            statusText.setText("正在提交视频生成任务...");
+            new Thread(new Runnable() {
+                @Override public void run() {
+                    // 提交视频生成任务
+                    final AI.VideoResult submitResult = AI.submitVideoTask(bgUrl, "画面缓缓流动，柔和自然，舒缓治愈");
+                    runOnUiThread(new Runnable() {
+                        @Override public void run() {
+                            if (submitResult.error != null) {
+                                statusText.setText("提交失败: " + submitResult.error);
+                                return;
+                            }
+                            statusText.setText("视频生成中，请稍候（约30秒）...");
+                            // 开始轮询
+                            pollVideoTask(submitResult.taskId, statusText, dialogWrap);
+                        }
+                    });
+                }
+            }).start();
+        });
+        panel.addView(videoBtn);
+
         // 取消按钮
         Button cancelBtn = new Button(this);
         cancelBtn.setText("取消");
@@ -1407,6 +1512,186 @@ public class ChatActivity extends Activity {
 
         dialogWrap.addView(panel);
         bgRoot.addView(dialogWrap);
+    }
+
+    // 轮询视频生成任务，完成后展示结果
+    private void pollVideoTask(final String taskId, final TextView statusText, final FrameLayout dialogWrap) {
+        final android.os.Handler handler = new android.os.Handler();
+        final int maxRetries = 60; // 最多轮询60次（约2分钟）
+        final int delayMs = 3000;  // 每3秒查询一次
+        final int[] retryCount = {0};
+
+        Runnable pollRunnable = new Runnable() {
+            @Override public void run() {
+                if (retryCount[0] >= maxRetries) {
+                    statusText.setText("视频生成超时，请稍后重试");
+                    return;
+                }
+                retryCount[0]++;
+                new Thread(new Runnable() {
+                    @Override public void run() {
+                        final AI.VideoResult result = AI.queryVideoResult(taskId);
+                        runOnUiThread(new Runnable() {
+                            @Override public void run() {
+                                if (result.success) {
+                                    statusText.setText("视频生成成功！");
+                                    // 展示视频播放对话框
+                                    showVideoResultDialog(result.videoUrl, dialogWrap);
+                                } else if (result.error != null) {
+                                    statusText.setText("生成失败: " + result.error);
+                                } else {
+                                    // 继续轮询
+                                    statusText.setText("视频生成中... (" + retryCount[0] + "/" + maxRetries + ")");
+                                    handler.postDelayed(this, delayMs);
+                                }
+                            }
+                        });
+                    }
+                }).start();
+            }
+        };
+        handler.post(pollRunnable);
+    }
+
+    // 展示视频生成结果对话框（可播放/下载）
+    private void showVideoResultDialog(final String videoUrl, final FrameLayout parentDialogWrap) {
+        boolean dark = isDarkMode(this);
+        int textMain = dark ? Color.WHITE : Color.parseColor("#202020");
+        int panelBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
+
+        final FrameLayout videoWrap = new FrameLayout(this);
+        videoWrap.setBackgroundColor(Color.parseColor("#AA000000"));
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setBackgroundColor(panelBg);
+        panel.setPadding(dip2px(20), dip2px(20), dip2px(20), dip2px(20));
+        FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(dip2px(320), FrameLayout.LayoutParams.WRAP_CONTENT);
+        plp.gravity = Gravity.CENTER;
+        panel.setLayoutParams(plp);
+        GradientDrawable pbg = new GradientDrawable();
+        pbg.setColor(panelBg);
+        pbg.setCornerRadius(dip2px(12));
+        panel.setBackground(pbg);
+
+        TextView title = new TextView(this);
+        title.setText("背景图视频生成完成");
+        title.setTextSize(16);
+        title.setTextColor(textMain);
+        title.getPaint().setFakeBoldText(true);
+        panel.addView(title);
+
+        TextView desc = new TextView(this);
+        desc.setText("视频已生成，点击下方按钮播放或下载。");
+        desc.setTextSize(13);
+        desc.setTextColor(dark ? Color.parseColor("#B0B0B0") : Color.parseColor("#666666"));
+        desc.setPadding(0, dip2px(10), 0, dip2px(12));
+        panel.addView(desc);
+
+        // 播放按钮
+        Button playBtn = new Button(this);
+        playBtn.setText("▶ 播放视频");
+        playBtn.setTextSize(14);
+        playBtn.setTextColor(Color.WHITE);
+        playBtn.setBackgroundColor(Color.parseColor("#5B8DEF"));
+        playBtn.setPadding(dip2px(16), dip2px(10), dip2px(16), dip2px(10));
+        LinearLayout.LayoutParams playLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        playLp.bottomMargin = dip2px(8);
+        playBtn.setLayoutParams(playLp);
+        playBtn.setOnClickListener(v -> {
+            // 使用系统播放器打开视频URL
+            try {
+                android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_VIEW);
+                intent.setDataAndType(android.net.Uri.parse(videoUrl), "video/mp4");
+                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(intent);
+            } catch (Exception e) {
+                Toast.makeText(ChatActivity.this, "无法播放视频: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
+        panel.addView(playBtn);
+
+        // 下载按钮
+        Button downloadBtn = new Button(this);
+        downloadBtn.setText("⬇ 下载视频");
+        downloadBtn.setTextSize(14);
+        downloadBtn.setTextColor(Color.WHITE);
+        downloadBtn.setBackgroundColor(Color.parseColor("#07C160"));
+        downloadBtn.setPadding(dip2px(16), dip2px(10), dip2px(16), dip2px(10));
+        LinearLayout.LayoutParams dlLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        dlLp.bottomMargin = dip2px(8);
+        downloadBtn.setLayoutParams(dlLp);
+        downloadBtn.setOnClickListener(v -> {
+            // 先保存视频URL到SoundStore（即使未下载也能播放网络URL）
+            sound.bgVideoUrl = videoUrl;
+            SoundStore.setBgVideoUrl(ChatActivity.this, soundId, videoUrl);
+            // 下载到本地
+            new Thread(new Runnable() {
+                @Override public void run() {
+                    try {
+                        java.net.URL url = new java.net.URL(videoUrl);
+                        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                        conn.setConnectTimeout(15000);
+                        conn.setReadTimeout(60000);
+                        java.io.InputStream is = conn.getInputStream();
+                        java.io.File dir = new java.io.File(getExternalFilesDir(null), "videos");
+                        if (!dir.exists()) dir.mkdirs();
+                        String filename = "bg_video_" + sound.id + "_" + System.currentTimeMillis() + ".mp4";
+                        java.io.File outFile = new java.io.File(dir, filename);
+                        java.io.FileOutputStream fos = new java.io.FileOutputStream(outFile);
+                        byte[] buf = new byte[4096];
+                        int len;
+                        while ((len = is.read(buf)) > 0) fos.write(buf, 0, len);
+                        fos.close();
+                        is.close();
+                        conn.disconnect();
+                        // 保存本地路径到SoundStore
+                        sound.bgVideoLocalPath = outFile.getAbsolutePath();
+                        SoundStore.setBgVideoLocalPath(ChatActivity.this, soundId, outFile.getAbsolutePath());
+                        runOnUiThread(new Runnable() {
+                            @Override public void run() {
+                                Toast.makeText(ChatActivity.this, "视频已保存: " + outFile.getAbsolutePath(), Toast.LENGTH_LONG).show();
+                                // 如果当前设置是视频优先模式，立即加载视频背景
+                                int bgMode = getSharedPreferences("whitenoise_settings", MODE_PRIVATE)
+                                    .getInt("bg_display_mode", 0);
+                                if (bgMode == 1) {
+                                    loadBackgroundVideo(outFile.getAbsolutePath());
+                                }
+                            }
+                        });
+                    } catch (Exception e) {
+                        runOnUiThread(new Runnable() {
+                            @Override public void run() {
+                                Toast.makeText(ChatActivity.this, "下载失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                            }
+                        });
+                    }
+                }
+            }).start();
+        });
+        panel.addView(downloadBtn);
+
+        // 关闭按钮
+        Button closeBtn = new Button(this);
+        closeBtn.setText("关闭");
+        closeBtn.setTextSize(14);
+        closeBtn.setTextColor(Color.parseColor("#888888"));
+        closeBtn.setBackgroundColor(Color.TRANSPARENT);
+        closeBtn.setPadding(dip2px(16), dip2px(10), dip2px(16), dip2px(10));
+        closeBtn.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        closeBtn.setOnClickListener(v -> {
+            bgRoot.removeView(videoWrap);
+            if (parentDialogWrap != null && parentDialogWrap.getParent() != null) {
+                bgRoot.removeView(parentDialogWrap);
+            }
+        });
+        panel.addView(closeBtn);
+
+        videoWrap.addView(panel);
+        bgRoot.addView(videoWrap);
     }
 
     private int dip2px(float dp) {

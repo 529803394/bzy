@@ -394,6 +394,111 @@ public class AI {
         return extractImageUrl(raw);
     }
 
+    // ======================== 6) 智谱 AI 视频生成（图像转视频）========================
+    private static final String ZHIPU_VIDEO_ENDPOINT = "https://open.bigmodel.cn/api/paas/v4/videos/generations";
+    private static final String ZHIPU_ASYNC_RESULT_ENDPOINT = "https://open.bigmodel.cn/api/paas/v4/async-result";
+
+    // 视频生成结果
+    public static class VideoResult {
+        public String taskId;
+        public String videoUrl;
+        public String error;
+        public boolean success;
+    }
+
+    // 提交视频生成任务（图像转视频，5秒）
+    public static VideoResult submitVideoTask(String imageUrl, String prompt) {
+        VideoResult result = new VideoResult();
+        if (imageUrl == null || imageUrl.isEmpty()) {
+            result.error = "图片URL为空";
+            return result;
+        }
+        String motionPrompt = (prompt == null || prompt.isEmpty()) ? "画面缓缓流动，柔和自然" : prompt;
+
+        StringBuilder body = new StringBuilder();
+        body.append("{\"model\":\"cogvideox-2\",\"image_url\":\"")
+            .append(jsonEscape(imageUrl)).append("\"");
+        body.append(",\"prompt\":\"").append(jsonEscape(motionPrompt)).append("\"");
+        body.append(",\"duration\":5,\"quality\":\"speed\"}");
+
+        String raw = postJsonRaw(ZHIPU_VIDEO_ENDPOINT, ZHIPU_KEY, body.toString());
+        if (raw == null || raw.isEmpty()) {
+            result.error = "提交任务失败";
+            return result;
+        }
+        // 提取 task id
+        String taskId = extractJsonField(raw, "id");
+        if (taskId == null || taskId.isEmpty()) {
+            result.error = "未获取到任务ID";
+            return result;
+        }
+        result.taskId = taskId;
+        return result;
+    }
+
+    // 查询视频生成任务结果（轮询）
+    public static VideoResult queryVideoResult(String taskId) {
+        VideoResult result = new VideoResult();
+        if (taskId == null || taskId.isEmpty()) {
+            result.error = "任务ID为空";
+            return result;
+        }
+        try {
+            URL url = new URL(ZHIPU_ASYNC_RESULT_ENDPOINT + "?id=" + taskId);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(30000);
+            conn.setRequestProperty("Authorization", "Bearer " + ZHIPU_KEY);
+            int code = conn.getResponseCode();
+            if (code >= 200 && code < 300) {
+                java.io.BufferedReader br = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = br.readLine()) != null) sb.append(line);
+                br.close();
+                String raw = sb.toString();
+                String status = extractJsonField(raw, "task_status");
+                if ("SUCCESS".equals(status)) {
+                    String videoUrl = extractVideoUrl(raw);
+                    if (videoUrl != null && !videoUrl.isEmpty()) {
+                        result.videoUrl = videoUrl;
+                        result.success = true;
+                    } else {
+                        result.error = "视频URL提取失败";
+                    }
+                } else if ("FAIL".equals(status)) {
+                    result.error = "生成失败";
+                } else {
+                    result.taskId = taskId; // PROCESSING，继续轮询
+                }
+            } else {
+                result.error = "查询失败: HTTP " + code;
+            }
+            conn.disconnect();
+        } catch (Exception e) {
+            result.error = "查询异常: " + e.getMessage();
+        }
+        return result;
+    }
+
+    // 从视频生成响应中提取视频URL
+    private static String extractVideoUrl(String json) {
+        if (json == null || json.isEmpty()) return null;
+        // 匹配 video_result.url
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+            "\"url\"\\s*:\\s*\"(https?://[^\"]+\\.mp4[^\"]*)\"",
+            java.util.regex.Pattern.CASE_INSENSITIVE).matcher(json);
+        if (m.find()) return m.group(1);
+        // 兼容其他格式
+        java.util.regex.Matcher m2 = java.util.regex.Pattern.compile(
+            "\"video_url\"\\s*:\\s*\"(https?://[^\"]+)\"",
+            java.util.regex.Pattern.CASE_INSENSITIVE).matcher(json);
+        if (m2.find()) return m2.group(1);
+        return null;
+    }
+
     // 从智谱 images/generations 响应中提取图片 URL
     private static String extractImageUrl(String json) {
         if (json == null || json.isEmpty()) return null;

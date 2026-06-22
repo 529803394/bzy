@@ -77,8 +77,10 @@ public class SoundStore {
         public int resId;              // 内置资源ID，0表示自定义
         public String url;             // 自定义/网络音频URL
         public String bgImageUrl;      // 背景图片网络URL
+        public String bgVideoUrl;      // 背景视频网络URL（智谱AI生成）
         public String localPath;       // 音频本地缓存路径（播放优先用此）
         public String bgImageLocalPath; // 背景图片本地缓存路径
+        public String bgVideoLocalPath; // 背景视频本地缓存路径
         public boolean isCustom;
         public boolean isPinned;
         public boolean isDeleted;      // 是否被删除（移到乐库）
@@ -94,8 +96,10 @@ public class SoundStore {
             this.resId = resId;
             this.url = null;
             this.bgImageUrl = null;
+            this.bgVideoUrl = null;
             this.localPath = null;
             this.bgImageLocalPath = null;
+            this.bgVideoLocalPath = null;
             this.isCustom = false;
             this.isPinned = false;
             this.isDeleted = false;
@@ -263,6 +267,10 @@ public class SoundStore {
                     if (s.localPath != null && s.localPath.isEmpty()) s.localPath = null;
                     s.bgImageLocalPath = obj.optString("bgImageLocalPath", null);
                     if (s.bgImageLocalPath != null && s.bgImageLocalPath.isEmpty()) s.bgImageLocalPath = null;
+                    s.bgVideoUrl = obj.optString("bgVideoUrl", null);
+                    if (s.bgVideoUrl != null && s.bgVideoUrl.isEmpty()) s.bgVideoUrl = null;
+                    s.bgVideoLocalPath = obj.optString("bgVideoLocalPath", null);
+                    if (s.bgVideoLocalPath != null && s.bgVideoLocalPath.isEmpty()) s.bgVideoLocalPath = null;
                     s.isPinned = obj.optBoolean("isPinned", false);
                     s.isDeleted = obj.optBoolean("isDeleted", false);
                     s.lastMessage = obj.optString("lastMessage", "");
@@ -285,10 +293,14 @@ public class SoundStore {
                 if (s.isCustom || s.isNetwork) {
                     obj.put("url", s.url == null ? "" : s.url);
                     obj.put("bgImageUrl", s.bgImageUrl == null ? "" : s.bgImageUrl);
+                    obj.put("bgVideoUrl", s.bgVideoUrl == null ? "" : s.bgVideoUrl);
                     obj.put("localPath", s.localPath == null ? "" : s.localPath);
                     obj.put("bgImageLocalPath", s.bgImageLocalPath == null ? "" : s.bgImageLocalPath);
+                    obj.put("bgVideoLocalPath", s.bgVideoLocalPath == null ? "" : s.bgVideoLocalPath);
                 } else {
                     obj.put("bgImageUrl", s.bgImageUrl == null ? "" : s.bgImageUrl);
+                    obj.put("bgVideoUrl", s.bgVideoUrl == null ? "" : s.bgVideoUrl);
+                    obj.put("bgVideoLocalPath", s.bgVideoLocalPath == null ? "" : s.bgVideoLocalPath);
                 }
                 obj.put("isPinned", s.isPinned);
                 obj.put("isDeleted", s.isDeleted);
@@ -378,6 +390,24 @@ public class SoundStore {
         Sound s = findById(ctx, id);
         if (s != null) {
             s.bgImageUrl = bgImageUrl;
+            save(ctx);
+        }
+    }
+
+    // 设置背景视频 URL（智谱AI生成后调用）
+    public static synchronized void setBgVideoUrl(Context ctx, String id, String bgVideoUrl) {
+        Sound s = findById(ctx, id);
+        if (s != null) {
+            s.bgVideoUrl = bgVideoUrl;
+            save(ctx);
+        }
+    }
+
+    // 设置背景视频本地缓存路径（下载完成后调用）
+    public static synchronized void setBgVideoLocalPath(Context ctx, String id, String bgVideoLocalPath) {
+        Sound s = findById(ctx, id);
+        if (s != null) {
+            s.bgVideoLocalPath = bgVideoLocalPath;
             save(ctx);
         }
     }

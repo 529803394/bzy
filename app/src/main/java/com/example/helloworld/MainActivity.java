@@ -1891,6 +1891,67 @@ public class MainActivity extends Activity {
         bgRow.addView(bgSwitch.getView());
         panel.addView(bgRow);
 
+        View divider2 = new View(this);
+        divider2.setBackgroundColor(dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#E5E5E5"));
+        LinearLayout.LayoutParams dlp2 = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dip2px(0.5f));
+        dlp2.topMargin = dip2px(10);
+        divider2.setLayoutParams(dlp2);
+        panel.addView(divider2);
+
+        // 背景显示模式
+        TextView bgModeLabel = new TextView(this);
+        bgModeLabel.setText("聊天背景显示模式");
+        bgModeLabel.setTextSize(14);
+        bgModeLabel.setTextColor(textMain);
+        bgModeLabel.setPadding(dip2px(16), dip2px(12), dip2px(16), dip2px(8));
+        panel.addView(bgModeLabel);
+
+        final int currentBgMode = getSharedPreferences("whitenoise_settings", MODE_PRIVATE)
+            .getInt("bg_display_mode", 0); // 0=图片优先, 1=视频优先
+        final int[] bgModes = new int[]{0, 1};
+        final String[] bgModeLabels = new String[]{"图片优先", "视频优先"};
+        LinearLayout bgModeBtns = new LinearLayout(this);
+        bgModeBtns.setOrientation(LinearLayout.HORIZONTAL);
+        bgModeBtns.setPadding(dip2px(16), 0, dip2px(16), dip2px(4));
+        bgModeBtns.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        for (int i = 0; i < bgModes.length; i++) {
+            Button b = new Button(this);
+            b.setText(bgModeLabels[i]);
+            b.setTextSize(13);
+            final boolean active = currentBgMode == bgModes[i];
+            b.setTextColor(active ? Color.WHITE : textMain);
+            GradientDrawable g = new GradientDrawable();
+            g.setCornerRadius(dip2px(8));
+            g.setColor(active ? btnActive : btnBg);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+                b.setBackground(g);
+            } else {
+                b.setBackgroundDrawable(g);
+            }
+            final int mode = bgModes[i];
+            b.setOnClickListener(v -> {
+                getSharedPreferences("whitenoise_settings", MODE_PRIVATE)
+                    .edit().putInt("bg_display_mode", mode).apply();
+                Toast.makeText(MainActivity.this, "已切换为" + bgModeLabels[mode] + "模式", Toast.LENGTH_SHORT).show();
+            });
+            LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
+                0, dip2px(38), 1);
+            if (i > 0) blp.leftMargin = dip2px(8);
+            b.setLayoutParams(blp);
+            bgModeBtns.addView(b);
+        }
+        panel.addView(bgModeBtns);
+
+        TextView bgModeHint = new TextView(this);
+        bgModeHint.setText("视频优先时，若无视频则显示图片");
+        bgModeHint.setTextSize(11);
+        bgModeHint.setTextColor(textSub);
+        bgModeHint.setGravity(Gravity.CENTER);
+        bgModeHint.setPadding(0, dip2px(6), 0, 0);
+        panel.addView(bgModeHint);
+
         // 检查更新按钮
         final TextView ver = new TextView(this);
         final String currentVer = UpdateChecker.getCurrentVersion(this);
@@ -1933,13 +1994,13 @@ public class MainActivity extends Activity {
         panel.addView(checkUpdate);
 
         // 分割线
-        View divider2 = new View(this);
-        divider2.setBackgroundColor(dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#E5E5E5"));
-        LinearLayout.LayoutParams dlp2 = new LinearLayout.LayoutParams(
+        View divider3 = new View(this);
+        divider3.setBackgroundColor(dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#E5E5E5"));
+        LinearLayout.LayoutParams dlp3 = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dip2px(0.5f));
-        dlp2.topMargin = dip2px(12);
-        divider2.setLayoutParams(dlp2);
-        panel.addView(divider2);
+        dlp3.topMargin = dip2px(12);
+        divider3.setLayoutParams(dlp3);
+        panel.addView(divider3);
 
         Button close = new Button(this);
         close.setText("关闭");
