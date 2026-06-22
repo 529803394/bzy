@@ -1518,7 +1518,7 @@ public class ChatActivity extends Activity {
     private void pollVideoTask(final String taskId) {
         final android.os.Handler handler = new android.os.Handler();
         final int maxRetries = 10;    // 最多轮询10次
-        final int delayMs = 300000;    // 每5分钟查询一次
+        final int delayMs = 60000;    // 每1分钟查询一次
         final int[] retryCount = {0};
 
         Runnable pollRunnable = new Runnable() {
