@@ -29,8 +29,8 @@ import java.util.List;
 public class AI {
 
     // ========== API KEY（由 build_apk.sh 从 .env 注入，保持下面占位行格式）==========
-    private static final String DEEPSEEK_KEY = "YOUR_DEEPSEEK_KEY_HERE";
-    private static final String ZHIPU_KEY = "YOUR_ZHIPU_KEY_HERE";
+    private static final String DEEPSEEK_KEY = "YOUR_DEEPSEEK_API_KEY";
+    private static final String ZHIPU_KEY = "YOUR_ZHIPU_API_KEY";
     private static final String ZHIPU_IMAGE_ENDPOINT = "https://open.bigmodel.cn/api/paas/v4/images/generations";
 
     // ========== 端点 ==========

@@ -35,13 +35,8 @@ public class HttpLogger {
     }
 
     public static List<HttpLogEntry> getLogs() {
-        List<HttpLogEntry> result = new ArrayList<>(logs);
-        // 倒序
-        List<HttpLogEntry> reversed = new ArrayList<>();
-        for (int i = result.size() - 1; i >= 0; i--) {
-            reversed.add(result.get(i));
-        }
-        return reversed;
+        // 时间升序（最早的在前面）
+        return new ArrayList<>(logs);
     }
 
     public static synchronized void clear() {

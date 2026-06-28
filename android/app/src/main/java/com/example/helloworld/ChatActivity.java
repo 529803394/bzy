@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.SurfaceTexture;
 import android.graphics.drawable.GradientDrawable;
 import android.media.MediaPlayer;
 import android.os.AsyncTask;
@@ -24,7 +25,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.VideoView;
+import android.view.TextureView;
 import android.widget.Toast;
 
 import java.io.InputStream;
@@ -59,12 +60,19 @@ public class ChatActivity extends Activity {
 
     // 背景动画相关
     private FrameLayout bgRoot;
-    private ImageView bgImage; // 背景图片（智能配图后可替换）
-    private VideoView bgVideo; // 背景视频（智谱AI生成后可替换）
+    private ImageView bgImage; // 背景图片
+    private TextureView bgTextureView; // 背景视频（TextureView + MediaPlayer）
+    private BackgroundVideoPlayer bgPlayer; // 视频播放器
     private View gradOverlay;   // 渐变叠加层
     private long bgAnimStart;
     private android.os.Handler bgHandler;
     private Runnable bgAnim;
+
+    // 背景视频播放器回调接口（静态内部接口）
+    interface VideoPlayerCallback {
+        void onReady();
+        void onError(String msg);
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -111,13 +119,15 @@ public class ChatActivity extends Activity {
         bgImage.setVisibility(View.INVISIBLE);
         bgRoot.addView(bgImage);
 
-        // 背景视频层（如果设置了背景视频）
-        bgVideo = new VideoView(this);
-        bgVideo.setLayoutParams(new FrameLayout.LayoutParams(
+        // 背景视频层（使用 TextureView + MediaPlayer，更可靠）
+        // 注意：TextureView 必须是 VISIBLE 才会创建 SurfaceTexture，无内容时透明不遮挡
+        bgTextureView = new TextureView(this);
+        bgTextureView.setLayoutParams(new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT));
-        bgVideo.setVisibility(View.INVISIBLE);
-        bgRoot.addView(bgVideo);
+        bgTextureView.setVisibility(View.VISIBLE);
+        bgRoot.addView(bgTextureView);
+        bgPlayer = new BackgroundVideoPlayer(bgTextureView);
 
         // 渐变叠加层（放在图片/视频上方、文字区域不透明度最大，边缘渐隐）
         gradOverlay = new View(this);
@@ -313,26 +323,48 @@ public class ChatActivity extends Activity {
         input.setHintTextColor(textSub);
         input.setBackgroundColor(inputBg);
         input.setPadding(dip2px(12), dip2px(8), dip2px(12), dip2px(8));
+        // 限制单行：高度与发送按钮一致
+        input.setSingleLine(true);
+        input.setMaxLines(1);
         LinearLayout.LayoutParams inputLp = new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+            0, dip2px(36), 1);
         input.setLayoutParams(inputLp);
         inputBar.addView(input);
 
+        // 发送按钮：圆角小按钮，默认隐藏，文字>0时显示
+        GradientDrawable sendBg = new GradientDrawable();
+        sendBg.setColor(primary);
+        sendBg.setCornerRadius(dip2px(18));
         Button sendBtn = new Button(this);
         sendBtn.setText("发送");
-        sendBtn.setTextSize(14);
+        sendBtn.setTextSize(13);
         sendBtn.setTextColor(Color.WHITE);
-        sendBtn.setBackgroundColor(primary);
-        sendBtn.setPadding(dip2px(14), dip2px(8), dip2px(14), dip2px(8));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) sendBtn.setBackground(sendBg);
+        else sendBtn.setBackgroundDrawable(sendBg);
+        sendBtn.setPadding(dip2px(14), 0, dip2px(14), 0);
+        sendBtn.setGravity(Gravity.CENTER);
+        sendBtn.setMinWidth(0);
+        sendBtn.setMinimumWidth(0);
+        sendBtn.setVisibility(View.GONE);
         LinearLayout.LayoutParams sendLp = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            dip2px(64), dip2px(36));
         sendLp.leftMargin = dip2px(8);
         sendBtn.setLayoutParams(sendLp);
+
+        // 输入框内容变化时显隐发送按钮
+        input.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(android.text.Editable s) {
+                sendBtn.setVisibility(s == null || s.toString().trim().isEmpty() ? View.GONE : View.VISIBLE);
+            }
+        });
         sendBtn.setOnClickListener(v -> {
             final String text = input.getText().toString().trim();
             if (text.isEmpty()) return;
             addMessage(text, true);
             input.setText("");
+            sendBtn.setVisibility(View.GONE);
 
             // 思考气泡（用于显示 "正在思考..."，API 返回后自动替换为真实回复）
             final TextView thinkingBubble = new TextView(this);
@@ -524,6 +556,15 @@ public class ChatActivity extends Activity {
         blp.width = Math.min(maxW, LinearLayout.LayoutParams.WRAP_CONTENT);
         bubble.setLayoutParams(blp);
         bubble.setMaxWidth(maxW);
+
+        // 长按复制消息内容
+        bubble.setOnLongClickListener(v -> {
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            ClipData clip = ClipData.newPlainText("chat_message", text);
+            clipboard.setPrimaryClip(clip);
+            Toast.makeText(ChatActivity.this, "已复制到剪贴板", Toast.LENGTH_SHORT).show();
+            return true;
+        });
 
         GradientDrawable bubbleBg = new GradientDrawable();
         if (fromUser) {
@@ -767,27 +808,44 @@ public class ChatActivity extends Activity {
         playBackgroundVideo(videoUrl);
     }
 
-    // 播放背景视频（循环播放）
+    // 播放背景视频（使用 TextureView + MediaPlayer 播放本地文件或网络 URL）
     private void playBackgroundVideo(String path) {
-        bgVideo.setVideoPath(path);
-        bgVideo.setOnPreparedListener(mp -> {
-            mp.setLooping(true);
-            mp.setVolume(0f, 0f); // 静音
-            bgVideo.setVisibility(View.VISIBLE);
-            bgImage.setVisibility(View.INVISIBLE);
-            bgVideo.start();
-            // 重新启动动画（视频模式下叠加层仍需要）
-            if (bgHandler != null) bgHandler.removeCallbacks(bgAnim);
-            startBgAnimation(gradOverlay, bgVideo);
-        });
-        bgVideo.setOnErrorListener((mp, what, extra) -> {
-            // 视频播放失败，fallback到图片
-            bgVideo.setVisibility(View.INVISIBLE);
-            if (sound.bgImageUrl != null && !sound.bgImageUrl.isEmpty()) {
-                new LoadBgImageTask(bgImage).execute(sound.bgImageUrl);
+        bgPlayer.play(path, new VideoPlayerCallback() {
+            @Override public void onReady() {
+                bgImage.setVisibility(View.INVISIBLE);
+                // 重新启动动画叠加层
+                if (bgHandler != null && bgAnim != null) bgHandler.removeCallbacks(bgAnim);
+                startBgAnimation(gradOverlay, bgTextureView);
+                Toast.makeText(ChatActivity.this, "背景视频开始播放", Toast.LENGTH_SHORT).show();
             }
-            return true;
+            @Override public void onError(String msg) {
+                Toast.makeText(ChatActivity.this, "视频播放失败: " + msg, Toast.LENGTH_LONG).show();
+                if (sound.bgImageUrl != null && !sound.bgImageUrl.isEmpty()) {
+                    bgImage.setVisibility(View.VISIBLE);
+                    new LoadBgImageTask(bgImage).execute(sound.bgImageUrl);
+                }
+            }
         });
+    }
+
+    // 播放默认背景视频（用于测试视频播放功能）
+    private void playDefaultBgVideo() {
+        String defaultVideoUrl = "https://ai.install.ren/wechat_579b1e63_video.mp4";
+        Toast.makeText(this, "正在加载默认背景视频...", Toast.LENGTH_SHORT).show();
+        playBackgroundVideo(defaultVideoUrl);
+    }
+
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (bgPlayer != null) bgPlayer.pause();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (bgPlayer != null) bgPlayer.resume();
     }
 
     // 异步加载背景图片
@@ -850,6 +908,8 @@ public class ChatActivity extends Activity {
         boolean bgPlay = getSharedPreferences("whitenoise_settings", Context.MODE_PRIVATE)
             .getBoolean("bg_play", false);
         if (!bgPlay) stopPlay();
+        // 释放视频播放器
+        if (bgPlayer != null) bgPlayer.release();
         // 停止背景动画
         if (bgHandler != null && bgAnim != null) {
             bgHandler.removeCallbacks(bgAnim);
@@ -1014,7 +1074,7 @@ public class ChatActivity extends Activity {
         return palettes[idx % palettes.length];
     }
 
-    // 显示当前声音详情（名称/类型/声音ID/网络URL/本地路径/背景URL/远程文件大小）
+    // 显示当前声音详情（全屏 + 可滚动 + 左滑返回）
     private void showSoundDetailDialog() {
         boolean dark = isDarkMode(this);
         int textMain = dark ? Color.WHITE : Color.parseColor("#202020");
@@ -1025,25 +1085,32 @@ public class ChatActivity extends Activity {
         dialogWrap.setBackgroundColor(Color.parseColor("#88000000"));
         dialogWrap.setOnClickListener(v -> bgRoot.removeView(dialogWrap));
 
+        // 内容面板：全屏宽度 + 可滚动
+        ScrollView scrollView = new ScrollView(this);
+        FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT);
+        scrollView.setLayoutParams(slp);
+
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setBackgroundColor(panelBg);
-        panel.setPadding(dip2px(24), dip2px(20), dip2px(24), dip2px(20));
-        FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(
-            dip2px(320), FrameLayout.LayoutParams.WRAP_CONTENT);
-        plp.gravity = Gravity.CENTER;
+        panel.setPadding(dip2px(24), dip2px(30), dip2px(24), dip2px(30));
+        ScrollView.LayoutParams plp = new ScrollView.LayoutParams(
+            ScrollView.LayoutParams.MATCH_PARENT,
+            ScrollView.LayoutParams.WRAP_CONTENT);
         panel.setLayoutParams(plp);
         GradientDrawable pbg = new GradientDrawable();
         pbg.setColor(panelBg);
-        pbg.setCornerRadius(dip2px(12));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) panel.setBackground(pbg);
         else panel.setBackgroundDrawable(pbg);
 
         TextView titleTv = new TextView(this);
         titleTv.setText("音乐详情");
-        titleTv.setTextSize(16);
+        titleTv.setTextSize(18);
         titleTv.setTextColor(textMain);
         titleTv.getPaint().setFakeBoldText(true);
+        titleTv.setPadding(0, 0, 0, dip2px(8));
         panel.addView(titleTv);
 
         // 类型标签
@@ -1064,7 +1131,6 @@ public class ChatActivity extends Activity {
             addDetailRow(panel, "本地路径", sound.localPath, textMain, textSub);
             addDetailRow(panel, "文件大小", SoundStore.formatFileSize(sound.fileSize), textMain, textSub);
         } else if (sound.url != null && !sound.url.isEmpty()) {
-            // 远程音乐：异步 HEAD 获取远程文件大小
             final TextView remoteSizeTv = addDetailRow(panel, "远程文件大小", "正在获取...", textMain, textSub);
             final String remoteUrl = sound.url;
             new Thread() {
@@ -1087,24 +1153,54 @@ public class ChatActivity extends Activity {
         if (sound.bgImageLocalPath != null && !sound.bgImageLocalPath.isEmpty()) {
             addDetailRow(panel, "背景图本地路径", sound.bgImageLocalPath, textMain, textSub);
         }
+        if (sound.bgVideoUrl != null && !sound.bgVideoUrl.isEmpty()) {
+            addDetailRow(panel, "背景视频网络地址", sound.bgVideoUrl, textMain, textSub);
+        }
+        if (sound.bgVideoLocalPath != null && !sound.bgVideoLocalPath.isEmpty()) {
+            addDetailRow(panel, "背景视频本地路径", sound.bgVideoLocalPath, textMain, textSub);
+        }
         if (sound.resId > 0) {
             addDetailRow(panel, "资源ID", "内置资源 (" + sound.resId + ")", textMain, textSub);
         }
 
+        // 底部关闭按钮
         Button closeBtn = new Button(this);
         closeBtn.setText("关闭");
-        closeBtn.setTextSize(14);
+        closeBtn.setTextSize(15);
         closeBtn.setTextColor(Color.WHITE);
         closeBtn.setBackgroundColor(Color.parseColor("#07C160"));
-        closeBtn.setPadding(dip2px(12), dip2px(10), dip2px(12), dip2px(10));
+        closeBtn.setPadding(dip2px(12), dip2px(12), dip2px(12), dip2px(12));
         LinearLayout.LayoutParams btnlp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        btnlp.topMargin = dip2px(16);
+        btnlp.topMargin = dip2px(24);
         closeBtn.setLayoutParams(btnlp);
         closeBtn.setOnClickListener(v -> bgRoot.removeView(dialogWrap));
         panel.addView(closeBtn);
 
-        dialogWrap.addView(panel);
+        scrollView.addView(panel);
+        dialogWrap.addView(scrollView);
+
+        // 左滑返回：从屏幕左侧 30dp 内开始滑动触发
+        final float[] touchStartX = {0};
+        final float[] touchStartY = {0};
+        dialogWrap.setOnTouchListener(new View.OnTouchListener() {
+            @Override public boolean onTouch(View v, android.view.MotionEvent event) {
+                if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
+                    touchStartX[0] = event.getX();
+                    touchStartY[0] = event.getY();
+                } else if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
+                    if (touchStartX[0] > dip2px(30)) return false;
+                    float dx = event.getX() - touchStartX[0];
+                    float dy = event.getY() - touchStartY[0];
+                    if (dx > dip2px(60) && Math.abs(dx) > Math.abs(dy) * 1.2f) {
+                        bgRoot.removeView(dialogWrap);
+                        return true;
+                    }
+                }
+                return false;
+            }
+        });
+
         bgRoot.addView(dialogWrap);
     }
 
@@ -1162,7 +1258,7 @@ public class ChatActivity extends Activity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) panel.setBackground(pbg);
         else panel.setBackgroundDrawable(pbg);
 
-        String[] items = new String[] { "📋  详情", "🧹  清除历史", "📤  分享", "🖼  生成背景图", "🔧  调试日志" };
+        String[] items = new String[] { "📋  详情", "🧹  清除历史", "📤  分享", "🖼  生成背景图", "📋  后台任务", "🎬  默认背景视频" };
         for (int i = 0; i < items.length; i++) {
             TextView tv = new TextView(this);
             tv.setText(items[i]);
@@ -1180,7 +1276,8 @@ public class ChatActivity extends Activity {
                 else if (idx == 1) showClearHistoryDialog();
                 else if (idx == 2) doShare();
                 else if (idx == 3) showArtDialog();
-                else showDebugLogDialog();
+                else if (idx == 4) showTaskListDialog();
+                else playDefaultBgVideo();
             });
             panel.addView(tv);
             if (i < items.length - 1) {
@@ -1277,130 +1374,303 @@ public class ChatActivity extends Activity {
         bgRoot.addView(confirmWrap);
     }
 
-    // 调试日志弹窗（每秒刷新，显示最近10条HTTP请求）
-    private void showDebugLogDialog() {
+    // 后台任务列表弹窗（替换原来的调试日志）
+    private void showTaskListDialog() {
         boolean dark = isDarkMode(this);
-        int textMain = dark ? Color.WHITE : Color.parseColor("#202020");
-        int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#999999");
-        int panelBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
-        int logBg = dark ? Color.parseColor("#121212") : Color.parseColor("#F5F5F5");
-        int logText = dark ? Color.parseColor("#10B981") : Color.parseColor("#1A7F32");
+        final int textMain = dark ? Color.WHITE : Color.parseColor("#202020");
+        final int textSub = dark ? Color.parseColor("#8a8a8a") : Color.parseColor("#999999");
+        final int panelBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
+        final int lineColor = dark ? Color.parseColor("#2a2a2a") : Color.parseColor("#EEEEEE");
+        final int successColor = Color.parseColor("#07C160");
+        final int errorColor = Color.parseColor("#ef4444");
+        final int pendingColor = Color.parseColor("#f59e0b");
 
         final FrameLayout dialogWrap = new FrameLayout(this);
         dialogWrap.setBackgroundColor(Color.parseColor("#88000000"));
+        dialogWrap.setOnClickListener(v -> bgRoot.removeView(dialogWrap));
 
-        LinearLayout panel = new LinearLayout(this);
+        // 全屏可滚动 + 左滑返回
+        final ScrollView scrollView = new ScrollView(this);
+        FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT);
+        scrollView.setLayoutParams(slp);
+
+        final LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setBackgroundColor(panelBg);
-        panel.setPadding(dip2px(16), dip2px(16), dip2px(16), dip2px(16));
-        FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(dip2px(340), FrameLayout.LayoutParams.WRAP_CONTENT);
-        plp.gravity = Gravity.CENTER;
+        panel.setPadding(dip2px(20), dip2px(30), dip2px(20), dip2px(30));
+        ScrollView.LayoutParams plp = new ScrollView.LayoutParams(
+            ScrollView.LayoutParams.MATCH_PARENT,
+            ScrollView.LayoutParams.WRAP_CONTENT);
         panel.setLayoutParams(plp);
-        GradientDrawable pbg = new GradientDrawable();
-        pbg.setColor(panelBg);
-        pbg.setCornerRadius(dip2px(12));
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) panel.setBackground(pbg);
-        else panel.setBackgroundDrawable(pbg);
 
-        // 标题栏
-        LinearLayout titleRow = new LinearLayout(this);
-        titleRow.setOrientation(LinearLayout.HORIZONTAL);
-        titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams trlp = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        titleRow.setLayoutParams(trlp);
+        // 标题
+        TextView titleTv = new TextView(this);
+        titleTv.setText("后台任务");
+        titleTv.setTextSize(18);
+        titleTv.setTextColor(textMain);
+        titleTv.getPaint().setFakeBoldText(true);
+        titleTv.setPadding(0, 0, 0, dip2px(16));
+        panel.addView(titleTv);
 
-        TextView title = new TextView(this);
-        title.setText("🔧 HTTP 调试日志");
-        title.setTextSize(16);
-        title.setTextColor(textMain);
-        title.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
-        titleRow.addView(title);
+        // 任务列表容器
+        final LinearLayout taskList = new LinearLayout(this);
+        taskList.setOrientation(LinearLayout.VERTICAL);
+        taskList.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        panel.addView(taskList);
 
-        Button clearBtn = new Button(this);
-        clearBtn.setText("清空");
-        clearBtn.setTextSize(12);
-        clearBtn.setTextColor(Color.parseColor("#FF6B6B"));
-        clearBtn.setBackgroundColor(Color.TRANSPARENT);
-        clearBtn.setOnClickListener(v -> HttpLogger.clear());
-        titleRow.addView(clearBtn);
-        panel.addView(titleRow);
+        // 空状态
+        final TextView emptyTv = new TextView(this);
+        emptyTv.setText("暂无后台任务\n\n提示：生成背景图视频后任务会出现在这里");
+        emptyTv.setTextSize(13);
+        emptyTv.setTextColor(textSub);
+        emptyTv.setGravity(Gravity.CENTER);
+        emptyTv.setPadding(0, dip2px(40), 0, dip2px(40));
+        panel.addView(emptyTv);
 
-        // 日志文本区
-        final ScrollView logScroll = new ScrollView(this);
-        logScroll.setBackgroundColor(logBg);
-        LinearLayout.LayoutParams lsp = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dip2px(240));
-        lsp.topMargin = dip2px(10);
-        logScroll.setLayoutParams(lsp);
-
-        final TextView logTextView = new TextView(this);
-        logTextView.setTextSize(11);
-        logTextView.setTextColor(logText);
-        logTextView.setPadding(dip2px(8), dip2px(8), dip2px(8), dip2px(8));
-        logTextView.setText("暂无日志...\n\n提示：点击任意HTTP请求后重新进入聊天，刷新页面可触发新的HTTP调用");
-        logScroll.addView(logTextView);
-        panel.addView(logScroll);
-
-        // 刷新提示
-        TextView hint = new TextView(this);
-        hint.setText("每秒自动刷新");
-        hint.setTextSize(11);
-        hint.setTextColor(textSub);
-        hint.setGravity(Gravity.CENTER);
-        hint.setPadding(0, dip2px(8), 0, 0);
-        panel.addView(hint);
+        // 渲染任务列表
+        final Runnable[] refreshTaskListHolder = new Runnable[1];
+        final Runnable refreshTaskList = new Runnable() {
+            @Override public void run() {
+                List<TaskStore.Task> tasks = TaskStore.getTasksBySoundId(ChatActivity.this, soundId);
+                taskList.removeAllViews();
+                if (tasks.isEmpty()) {
+                    emptyTv.setVisibility(View.VISIBLE);
+                    return;
+                }
+                emptyTv.setVisibility(View.GONE);
+                for (final TaskStore.Task task : tasks) {
+                    View item = buildTaskItem(task, dark, textMain, textSub, lineColor,
+                        successColor, errorColor, pendingColor, new Runnable() {
+                            @Override public void run() {
+                                if (refreshTaskListHolder[0] != null) refreshTaskListHolder[0].run();
+                            }
+                        });
+                    taskList.addView(item);
+                }
+            }
+        };
+        refreshTaskListHolder[0] = refreshTaskList;
 
         // 关闭按钮
         Button closeBtn = new Button(this);
         closeBtn.setText("关闭");
-        closeBtn.setTextSize(14);
-        closeBtn.setTextColor(Color.parseColor("#10AEFF"));
-        closeBtn.setBackgroundColor(Color.TRANSPARENT);
-        LinearLayout.LayoutParams clp2 = new LinearLayout.LayoutParams(
+        closeBtn.setTextSize(15);
+        closeBtn.setTextColor(Color.WHITE);
+        closeBtn.setBackgroundColor(Color.parseColor("#07C160"));
+        closeBtn.setPadding(dip2px(12), dip2px(12), dip2px(12), dip2px(12));
+        LinearLayout.LayoutParams btnlp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        clp2.topMargin = dip2px(8);
-        closeBtn.setLayoutParams(clp2);
-        final android.os.Handler refreshHandler = new android.os.Handler();
-        closeBtn.setOnClickListener(v -> {
-            refreshHandler.removeCallbacksAndMessages(null);
-            bgRoot.removeView(dialogWrap);
-        });
+        btnlp.topMargin = dip2px(24);
+        closeBtn.setLayoutParams(btnlp);
+        closeBtn.setOnClickListener(v -> bgRoot.removeView(dialogWrap));
         panel.addView(closeBtn);
 
-        dialogWrap.addView(panel);
-        bgRoot.addView(dialogWrap);
+        scrollView.addView(panel);
+        dialogWrap.addView(scrollView);
 
-        // 每秒刷新日志
-        refreshHandler.postDelayed(new Runnable() {
-            @Override public void run() {
-                if (dialogWrap.getParent() == null) {
-                    refreshHandler.removeCallbacks(this);
-                    return;
+        // 左滑返回
+        final float[] touchStartX = {0};
+        final float[] touchStartY = {0};
+        dialogWrap.setOnTouchListener(new View.OnTouchListener() {
+            @Override public boolean onTouch(View v, android.view.MotionEvent event) {
+                if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
+                    touchStartX[0] = event.getX();
+                    touchStartY[0] = event.getY();
+                } else if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
+                    if (touchStartX[0] > dip2px(30)) return false;
+                    float dx = event.getX() - touchStartX[0];
+                    float dy = event.getY() - touchStartY[0];
+                    if (dx > dip2px(60) && Math.abs(dx) > Math.abs(dy) * 1.2f) {
+                        bgRoot.removeView(dialogWrap);
+                        return true;
+                    }
                 }
-                StringBuilder sb = new StringBuilder();
-                java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault());
-                for (HttpLogger.HttpLogEntry entry : HttpLogger.getLogs()) {
-                    String time = sdf.format(new java.util.Date(entry.timestamp));
-                    String code = entry.responseCode > 0 ? String.valueOf(entry.responseCode) : "ERR";
-                    String err = entry.error != null ? " ⚠️" + entry.error : "";
-                    String shortUrl = entry.url.length() > 60 ? entry.url.substring(0, 60) + "..." : entry.url;
-                    sb.append("[").append(time).append("] ")
-                        .append(entry.method).append(" ").append(code)
-                        .append(" ").append(entry.durationMs).append("ms").append(err).append("\n")
-                        .append(shortUrl).append("\n\n");
-                }
-                if (sb.length() == 0) {
-                    logTextView.setText("暂无日志...\n\n提示：进行聊天交互或生成背景图后会记录HTTP请求");
-                } else {
-                    logTextView.setText(sb.toString());
-                    // 滚动到底部
-                    logScroll.post(() -> logScroll.fullScroll(ScrollView.FOCUS_DOWN));
-                }
-                refreshHandler.postDelayed(this, 1000);
+                return false;
             }
-        }, 500); // 首次延迟0.5秒立即刷新
+        });
+
+        bgRoot.addView(dialogWrap);
+        refreshTaskList.run();
     }
+
+    // 构建单个任务行（标题/状态/三个操作按钮：应用、刷新、删除）
+    private View buildTaskItem(final TaskStore.Task task, boolean dark, final int textMain,
+                               final int textSub, final int lineColor,
+                               final int successColor, final int errorColor, final int pendingColor,
+                               final Runnable onRefresh) {
+        LinearLayout item = new LinearLayout(this);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setBackgroundColor(dark ? Color.parseColor("#252525") : Color.parseColor("#FAFAFA"));
+        item.setPadding(dip2px(12), dip2px(12), dip2px(12), dip2px(12));
+        LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        ilp.bottomMargin = dip2px(8);
+        item.setLayoutParams(ilp);
+        GradientDrawable ibg = new GradientDrawable();
+        ibg.setColor(dark ? Color.parseColor("#252525") : Color.parseColor("#FAFAFA"));
+        ibg.setCornerRadius(dip2px(8));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) item.setBackground(ibg);
+        else item.setBackgroundDrawable(ibg);
+
+        // 第一行：标题 + 状态
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        row1.setGravity(Gravity.CENTER_VERTICAL);
+        row1.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView titleTv = new TextView(this);
+        titleTv.setText(task.title);
+        titleTv.setTextSize(14);
+        titleTv.setTextColor(textMain);
+        titleTv.getPaint().setFakeBoldText(true);
+        titleTv.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        row1.addView(titleTv);
+
+        TextView statusTv = new TextView(this);
+        statusTv.setText(task.getStatusText());
+        statusTv.setTextSize(12);
+        int statusColor;
+        if (TaskStore.STATUS_SUCCESS.equals(task.status)) statusColor = successColor;
+        else if (TaskStore.STATUS_FAILED.equals(task.status) || TaskStore.STATUS_TIMEOUT.equals(task.status)) statusColor = errorColor;
+        else statusColor = pendingColor;
+        statusTv.setTextColor(statusColor);
+        row1.addView(statusTv);
+        item.addView(row1);
+
+        // 第二行：任务ID
+        TextView idTv = new TextView(this);
+        idTv.setText("ID: " + task.taskId);
+        idTv.setTextSize(11);
+        idTv.setTextColor(textSub);
+        idTv.setPadding(0, dip2px(4), 0, 0);
+        item.addView(idTv);
+
+        // 第三行：错误信息（失败时显示）
+        if (task.error != null && !task.error.isEmpty()) {
+            TextView errTv = new TextView(this);
+            errTv.setText(task.error);
+            errTv.setTextSize(11);
+            errTv.setTextColor(errorColor);
+            errTv.setPadding(0, dip2px(4), 0, 0);
+            errTv.setSingleLine(false);
+            errTv.setMaxLines(2);
+            errTv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            item.addView(errTv);
+        }
+
+        // 第四行：三个按钮（应用、刷新、删除）
+        LinearLayout btnRow = new LinearLayout(this);
+        btnRow.setOrientation(LinearLayout.HORIZONTAL);
+        btnRow.setGravity(Gravity.CENTER_VERTICAL);
+        btnRow.setPadding(0, dip2px(10), 0, 0);
+        btnRow.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        // 应用按钮
+        Button applyBtn = new Button(this);
+        applyBtn.setText("应用");
+        applyBtn.setTextSize(12);
+        applyBtn.setTextColor(Color.WHITE);
+        boolean canApply = TaskStore.STATUS_SUCCESS.equals(task.status) && task.result != null;
+        GradientDrawable applyBg = new GradientDrawable();
+        applyBg.setColor(canApply ? Color.parseColor("#07C160") : Color.parseColor("#CCCCCC"));
+        applyBg.setCornerRadius(dip2px(6));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) applyBtn.setBackground(applyBg);
+        else applyBtn.setBackgroundDrawable(applyBg);
+        applyBtn.setPadding(dip2px(8), dip2px(6), dip2px(8), dip2px(6));
+        applyBtn.setEnabled(canApply);
+        LinearLayout.LayoutParams applyLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        applyLp.rightMargin = dip2px(6);
+        applyBtn.setLayoutParams(applyLp);
+        applyBtn.setOnClickListener(v -> {
+            try {
+                if (TaskStore.TYPE_VIDEO.equals(task.type) && task.result != null) {
+                    sound.bgVideoUrl = task.result;
+                    SoundStore.setBgVideoUrl(ChatActivity.this, soundId, task.result);
+                    downloadAndPlayBgVideo(task.result);
+                    Toast.makeText(ChatActivity.this, "已应用背景视频", Toast.LENGTH_SHORT).show();
+                }
+            } catch (Exception e) {
+                Toast.makeText(ChatActivity.this, "应用失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
+        btnRow.addView(applyBtn);
+
+        // 刷新按钮
+        final Button refreshBtn = new Button(this);
+        refreshBtn.setText("刷新");
+        refreshBtn.setTextSize(12);
+        refreshBtn.setTextColor(Color.WHITE);
+        GradientDrawable refreshBg = new GradientDrawable();
+        refreshBg.setColor(Color.parseColor("#3B82F6"));
+        refreshBg.setCornerRadius(dip2px(6));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) refreshBtn.setBackground(refreshBg);
+        else refreshBtn.setBackgroundDrawable(refreshBg);
+        refreshBtn.setPadding(dip2px(8), dip2px(6), dip2px(8), dip2px(6));
+        LinearLayout.LayoutParams refreshLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        refreshLp.rightMargin = dip2px(6);
+        refreshBtn.setLayoutParams(refreshLp);
+        refreshBtn.setOnClickListener(v -> {
+            if (TaskStore.TYPE_VIDEO.equals(task.type)) {
+                refreshBtn.setText("查询中...");
+                refreshBtn.setEnabled(false);
+                final String taskId = task.taskId;
+                new Thread(new Runnable() {
+                    @Override public void run() {
+                        final AI.VideoResult r = AI.queryVideoResult(taskId);
+                        runOnUiThread(new Runnable() {
+                            @Override public void run() {
+                                refreshBtn.setText("刷新");
+                                refreshBtn.setEnabled(true);
+                                if (r.success) {
+                                    TaskStore.updateTaskStatus(ChatActivity.this, taskId,
+                                        TaskStore.STATUS_SUCCESS, r.videoUrl, null);
+                                    Toast.makeText(ChatActivity.this, "视频生成成功", Toast.LENGTH_SHORT).show();
+                                } else if (r.error != null) {
+                                    TaskStore.updateTaskStatus(ChatActivity.this, taskId,
+                                        TaskStore.STATUS_FAILED, null, r.error);
+                                    Toast.makeText(ChatActivity.this, "任务失败: " + r.error, Toast.LENGTH_SHORT).show();
+                                } else {
+                                    TaskStore.updateTaskStatus(ChatActivity.this, taskId,
+                                        TaskStore.STATUS_PROCESSING, null, null);
+                                    Toast.makeText(ChatActivity.this, "任务处理中，请稍后再刷", Toast.LENGTH_SHORT).show();
+                                }
+                                if (onRefresh != null) onRefresh.run();
+                            }
+                        });
+                    }
+                }).start();
+            }
+        });
+        btnRow.addView(refreshBtn);
+
+        // 删除按钮
+        Button delBtn = new Button(this);
+        delBtn.setText("删除");
+        delBtn.setTextSize(12);
+        delBtn.setTextColor(Color.WHITE);
+        GradientDrawable delBg = new GradientDrawable();
+        delBg.setColor(Color.parseColor("#ef4444"));
+        delBg.setCornerRadius(dip2px(6));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) delBtn.setBackground(delBg);
+        else delBtn.setBackgroundDrawable(delBg);
+        delBtn.setPadding(dip2px(8), dip2px(6), dip2px(8), dip2px(6));
+        delBtn.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        delBtn.setOnClickListener(v -> {
+            TaskStore.deleteTask(ChatActivity.this, task.taskId);
+            Toast.makeText(ChatActivity.this, "已删除任务", Toast.LENGTH_SHORT).show();
+            if (onRefresh != null) onRefresh.run();
+        });
+        btnRow.addView(delBtn);
+
+        item.addView(btnRow);
+        return item;
+    }
+
 
     // 智能配图弹窗
     private void showArtDialog() {
@@ -1614,9 +1884,12 @@ public class ChatActivity extends Activity {
                                 statusText.setText("提交失败: " + submitResult.error);
                                 return;
                             }
-                            statusText.setText("任务已提交: " + submitResult.taskId + "\n后台生成中，请关注聊天窗口");
-                            // 开始轮询
-                            pollVideoTask(submitResult.taskId);
+                            statusText.setText("任务已提交: " + submitResult.taskId + "\n请在「后台任务」中查看进度，手动刷新获取结果");
+                            // 加入任务列表（持久化，跨页面保留）
+                            TaskStore.Task task = new TaskStore.Task(
+                                submitResult.taskId, TaskStore.TYPE_VIDEO, soundId);
+                            task.title = "背景视频生成";
+                            TaskStore.addTask(ChatActivity.this, task);
                         }
                     });
                 }
@@ -1640,183 +1913,191 @@ public class ChatActivity extends Activity {
         bgRoot.addView(dialogWrap);
     }
 
-    // 轮询视频生成任务，完成后在聊天窗口通知结果
-    private void pollVideoTask(final String taskId) {
-        final android.os.Handler handler = new android.os.Handler();
-        final int maxRetries = 10;    // 最多轮询10次
-        final int delayMs = 60000;    // 每1分钟查询一次
-        final int[] retryCount = {0};
-
-        Runnable pollRunnable = new Runnable() {
+    // 下载视频到本地并播放为背景（在后台线程中下载，完成后切回主线程播放）
+    private void downloadAndPlayBgVideo(final String videoUrl) {
+        new Thread(new Runnable() {
             @Override public void run() {
-                if (retryCount[0] >= maxRetries) {
-                    addMessage("视频生成超时（任务ID: " + taskId + "），请稍后重试。", false);
-                    return;
+                try {
+                    java.net.URL url = new java.net.URL(videoUrl);
+                    java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                    conn.setConnectTimeout(15000);
+                    conn.setReadTimeout(60000);
+                    java.io.InputStream is = conn.getInputStream();
+                    java.io.File dir = new java.io.File(getExternalFilesDir(null), "videos");
+                    if (!dir.exists()) dir.mkdirs();
+                    String filename = "bg_video_" + sound.id + "_" + System.currentTimeMillis() + ".mp4";
+                    final java.io.File outFile = new java.io.File(dir, filename);
+                    java.io.FileOutputStream fos = new java.io.FileOutputStream(outFile);
+                    byte[] buf = new byte[4096];
+                    int len;
+                    while ((len = is.read(buf)) > 0) fos.write(buf, 0, len);
+                    fos.close();
+                    is.close();
+                    conn.disconnect();
+                    // 保存本地路径
+                    sound.bgVideoLocalPath = outFile.getAbsolutePath();
+                    SoundStore.setBgVideoLocalPath(ChatActivity.this, soundId, outFile.getAbsolutePath());
+                    runOnUiThread(new Runnable() {
+                        @Override public void run() {
+                            loadBackgroundVideo(outFile.getAbsolutePath());
+                            Toast.makeText(ChatActivity.this, "背景视频已就绪", Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                } catch (Exception e) {
+                    runOnUiThread(new Runnable() {
+                        @Override public void run() {
+                            Toast.makeText(ChatActivity.this, "背景视频下载失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                        }
+                    });
                 }
-                retryCount[0]++;
-                new Thread(new Runnable() {
-                    @Override public void run() {
-                        final AI.VideoResult result = AI.queryVideoResult(taskId);
-                        runOnUiThread(new Runnable() {
-                            @Override public void run() {
-                                if (result.success) {
-                                    addMessage("视频生成成功！任务ID: " + taskId + "\n" + result.videoUrl, false);
-                                    // 展示视频播放对话框（如果用户还开着页面）
-                                    showVideoResultDialog(result.videoUrl, null);
-                                } else if (result.error != null) {
-                                    addMessage("视频生成失败（任务ID: " + taskId + "）: " + result.error, false);
-                                } else {
-                                    // 继续轮询
-                                    handler.postDelayed(this, delayMs);
-                                }
-                            }
-                        });
-                    }
-                }).start();
             }
-        };
-        handler.post(pollRunnable);
+        }).start();
     }
 
-    // 展示视频生成结果对话框（可播放/下载）
-    private void showVideoResultDialog(final String videoUrl, final FrameLayout parentDialogWrap) {
-        boolean dark = isDarkMode(this);
-        int textMain = dark ? Color.WHITE : Color.parseColor("#202020");
-        int panelBg = dark ? Color.parseColor("#1e1e1e") : Color.WHITE;
+    // ========== 背景视频播放器（TextureView + MediaPlayer） ==========
+    // 相比 VideoView 更可靠：需要先 release/reset 才能加载新视频
+    // 支持本地文件和 HTTP/HTTPS 网络 URL，自动循环播放
+    private class BackgroundVideoPlayer implements TextureView.SurfaceTextureListener {
+        private MediaPlayer mp;
+        private TextureView textureView;
+        private boolean isPlaying = false;
+        private boolean isSurfaceTextureReady = false;
+        private String pendingPath;
+        private VideoPlayerCallback pendingCallback;
 
-        final FrameLayout videoWrap = new FrameLayout(this);
-        videoWrap.setBackgroundColor(Color.parseColor("#AA000000"));
+        BackgroundVideoPlayer(TextureView tv) {
+            this.textureView = tv;
+            tv.setSurfaceTextureListener(this);
+        }
 
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setBackgroundColor(panelBg);
-        panel.setPadding(dip2px(20), dip2px(20), dip2px(20), dip2px(20));
-        FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(dip2px(320), FrameLayout.LayoutParams.WRAP_CONTENT);
-        plp.gravity = Gravity.CENTER;
-        panel.setLayoutParams(plp);
-        GradientDrawable pbg = new GradientDrawable();
-        pbg.setColor(panelBg);
-        pbg.setCornerRadius(dip2px(12));
-        panel.setBackground(pbg);
-
-        TextView title = new TextView(this);
-        title.setText("背景图视频生成完成");
-        title.setTextSize(16);
-        title.setTextColor(textMain);
-        title.getPaint().setFakeBoldText(true);
-        panel.addView(title);
-
-        TextView desc = new TextView(this);
-        desc.setText("视频已生成，点击下方按钮播放或下载。");
-        desc.setTextSize(13);
-        desc.setTextColor(dark ? Color.parseColor("#B0B0B0") : Color.parseColor("#666666"));
-        desc.setPadding(0, dip2px(10), 0, dip2px(12));
-        panel.addView(desc);
-
-        // 播放按钮
-        Button playBtn = new Button(this);
-        playBtn.setText("▶ 播放视频");
-        playBtn.setTextSize(14);
-        playBtn.setTextColor(Color.WHITE);
-        playBtn.setBackgroundColor(Color.parseColor("#5B8DEF"));
-        playBtn.setPadding(dip2px(16), dip2px(10), dip2px(16), dip2px(10));
-        LinearLayout.LayoutParams playLp = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        playLp.bottomMargin = dip2px(8);
-        playBtn.setLayoutParams(playLp);
-        playBtn.setOnClickListener(v -> {
-            // 使用系统播放器打开视频URL
-            try {
-                android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_VIEW);
-                intent.setDataAndType(android.net.Uri.parse(videoUrl), "video/mp4");
-                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivity(intent);
-            } catch (Exception e) {
-                Toast.makeText(ChatActivity.this, "无法播放视频: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        // SurfaceTextureListener 回调：SurfaceTexture 创建好后调用
+        @Override
+        public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+            isSurfaceTextureReady = true;
+            // 如果有等待播放的视频，立即开始
+            if (pendingPath != null && pendingCallback != null) {
+                String path = pendingPath;
+                VideoPlayerCallback cb = pendingCallback;
+                pendingPath = null;
+                pendingCallback = null;
+                internalPlay(path, cb);
             }
-        });
-        panel.addView(playBtn);
+        }
 
-        // 下载按钮
-        Button downloadBtn = new Button(this);
-        downloadBtn.setText("⬇ 下载视频");
-        downloadBtn.setTextSize(14);
-        downloadBtn.setTextColor(Color.WHITE);
-        downloadBtn.setBackgroundColor(Color.parseColor("#07C160"));
-        downloadBtn.setPadding(dip2px(16), dip2px(10), dip2px(16), dip2px(10));
-        LinearLayout.LayoutParams dlLp = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        dlLp.bottomMargin = dip2px(8);
-        downloadBtn.setLayoutParams(dlLp);
-        downloadBtn.setOnClickListener(v -> {
-            // 先保存视频URL到SoundStore（即使未下载也能播放网络URL）
-            sound.bgVideoUrl = videoUrl;
-            SoundStore.setBgVideoUrl(ChatActivity.this, soundId, videoUrl);
-            // 下载到本地
-            new Thread(new Runnable() {
-                @Override public void run() {
-                    try {
-                        java.net.URL url = new java.net.URL(videoUrl);
-                        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
-                        conn.setConnectTimeout(15000);
-                        conn.setReadTimeout(60000);
-                        java.io.InputStream is = conn.getInputStream();
-                        java.io.File dir = new java.io.File(getExternalFilesDir(null), "videos");
-                        if (!dir.exists()) dir.mkdirs();
-                        String filename = "bg_video_" + sound.id + "_" + System.currentTimeMillis() + ".mp4";
-                        java.io.File outFile = new java.io.File(dir, filename);
-                        java.io.FileOutputStream fos = new java.io.FileOutputStream(outFile);
-                        byte[] buf = new byte[4096];
-                        int len;
-                        while ((len = is.read(buf)) > 0) fos.write(buf, 0, len);
-                        fos.close();
-                        is.close();
-                        conn.disconnect();
-                        // 保存本地路径到SoundStore
-                        sound.bgVideoLocalPath = outFile.getAbsolutePath();
-                        SoundStore.setBgVideoLocalPath(ChatActivity.this, soundId, outFile.getAbsolutePath());
-                        runOnUiThread(new Runnable() {
-                            @Override public void run() {
-                                Toast.makeText(ChatActivity.this, "视频已保存: " + outFile.getAbsolutePath(), Toast.LENGTH_LONG).show();
-                                // 如果当前设置是视频优先模式，立即加载视频背景
-                                int bgMode = getSharedPreferences("whitenoise_settings", MODE_PRIVATE)
-                                    .getInt("bg_display_mode", 0);
-                                if (bgMode == 1) {
-                                    loadBackgroundVideo(outFile.getAbsolutePath());
-                                }
-                            }
-                        });
-                    } catch (Exception e) {
-                        runOnUiThread(new Runnable() {
-                            @Override public void run() {
-                                Toast.makeText(ChatActivity.this, "下载失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                            }
-                        });
+        @Override public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {}
+        @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
+            isSurfaceTextureReady = false;
+            release();
+            return true;
+        }
+        @Override public void onSurfaceTextureUpdated(SurfaceTexture surface) {}
+
+        // 播放视频（本地路径或网络 URL），循环播放，静音
+        void play(String path, VideoPlayerCallback cb) {
+            // 每次播放前先完全释放旧播放器
+            release();
+
+            // 检查 SurfaceTexture 是否就绪
+            SurfaceTexture st = textureView.getSurfaceTexture();
+            if (st == null) {
+                // SurfaceTexture 还未创建好，保存参数，等 onSurfaceTextureAvailable 再播
+                pendingPath = path;
+                pendingCallback = cb;
+                return;
+            }
+            internalPlay(path, cb);
+        }
+
+        private void internalPlay(String path, VideoPlayerCallback cb) {
+            try {
+                mp = new MediaPlayer();
+                mp.setLooping(true);
+                mp.setVolume(0f, 0f); // 静音
+
+                mp.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
+                    @Override public void onPrepared(MediaPlayer mp) {
+                        try {
+                            mp.start();
+                            isPlaying = true;
+                            if (cb != null) cb.onReady();
+                        } catch (IllegalStateException e) {
+                            if (cb != null) cb.onError("播放器状态异常: " + e.getMessage());
+                        }
+                    }
+                });
+
+                mp.setOnErrorListener(new MediaPlayer.OnErrorListener() {
+                    @Override public boolean onError(MediaPlayer mp, int what, int extra) {
+                        isPlaying = false;
+                        String msg;
+                        switch (what) {
+                            case MediaPlayer.MEDIA_ERROR_UNKNOWN:    msg = "未知错误 (extra=" + extra + ")"; break;
+                            case MediaPlayer.MEDIA_ERROR_SERVER_DIED: msg = "服务器连接断开"; break;
+                            default:                                 msg = "播放错误 (what=" + what + ", extra=" + extra + ")"; break;
+                        }
+                        if (cb != null) cb.onError(msg);
+                        return true;
+                    }
+                });
+
+                // 设置数据源
+                if (path.startsWith("http://") || path.startsWith("https://")) {
+                    // 网络 URL
+                    mp.setDataSource(path);
+                } else {
+                    // 本地文件
+                    java.io.File f = new java.io.File(path);
+                    if (f.exists()) {
+                        mp.setDataSource(f.getAbsolutePath());
+                    } else {
+                        if (cb != null) cb.onError("本地文件不存在: " + path);
+                        mp.release();
+                        mp = null;
+                        return;
                     }
                 }
-            }).start();
-        });
-        panel.addView(downloadBtn);
 
-        // 关闭按钮
-        Button closeBtn = new Button(this);
-        closeBtn.setText("关闭");
-        closeBtn.setTextSize(14);
-        closeBtn.setTextColor(Color.parseColor("#888888"));
-        closeBtn.setBackgroundColor(Color.TRANSPARENT);
-        closeBtn.setPadding(dip2px(16), dip2px(10), dip2px(16), dip2px(10));
-        closeBtn.setLayoutParams(new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-        closeBtn.setOnClickListener(v -> {
-            bgRoot.removeView(videoWrap);
-            if (parentDialogWrap != null && parentDialogWrap.getParent() != null) {
-                bgRoot.removeView(parentDialogWrap);
+                // 将 MediaPlayer 输出到 TextureView
+                SurfaceTexture st = textureView.getSurfaceTexture();
+                if (st == null) {
+                    if (cb != null) cb.onError("SurfaceTexture 未初始化");
+                    mp.release();
+                    mp = null;
+                    return;
+                }
+                mp.setSurface(new android.view.Surface(st));
+                mp.prepareAsync(); // 异步准备（网络视频必须异步）
+
+            } catch (Exception e) {
+                if (cb != null) cb.onError("播放器初始化失败: " + e.getMessage());
+                release();
             }
-        });
-        panel.addView(closeBtn);
+        }
 
-        videoWrap.addView(panel);
-        bgRoot.addView(videoWrap);
+        void pause() {
+            if (mp != null && isPlaying) {
+                try { mp.pause(); } catch (IllegalStateException ignored) {}
+                isPlaying = false;
+            }
+        }
+
+        void resume() {
+            if (mp != null && !isPlaying) {
+                try { mp.start(); isPlaying = true; } catch (IllegalStateException ignored) {}
+            }
+        }
+
+        void release() {
+            isPlaying = false;
+            if (mp != null) {
+                try {
+                    if (mp.isPlaying()) mp.stop();
+                    mp.reset();
+                    mp.release();
+                } catch (Exception ignored) {}
+                mp = null;
+            }
+        }
     }
 
     private int dip2px(float dp) {

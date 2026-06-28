@@ -81,6 +81,7 @@ public class SoundStore {
         public String localPath;       // 音频本地缓存路径（播放优先用此）
         public String bgImageLocalPath; // 背景图片本地缓存路径
         public String bgVideoLocalPath; // 背景视频本地缓存路径
+        public String bgVideoTaskId;    // 背景视频生成任务ID（轮询用，持久化跨页面恢复）
         public boolean isCustom;
         public boolean isPinned;
         public boolean isDeleted;      // 是否被删除（移到乐库）
@@ -100,6 +101,7 @@ public class SoundStore {
             this.localPath = null;
             this.bgImageLocalPath = null;
             this.bgVideoLocalPath = null;
+            this.bgVideoTaskId = null;
             this.isCustom = false;
             this.isPinned = false;
             this.isDeleted = false;
@@ -244,6 +246,10 @@ public class SoundStore {
                             s.lastTime = obj.optLong("lastTime", 0);
                             String bg = obj.optString("bgImageUrl", null);
                             if (bg != null && !bg.isEmpty()) s.bgImageUrl = bg;
+                            s.bgVideoUrl = obj.optString("bgVideoUrl", null);
+                            if (s.bgVideoUrl != null && s.bgVideoUrl.isEmpty()) s.bgVideoUrl = null;
+                            s.bgVideoLocalPath = obj.optString("bgVideoLocalPath", null);
+                            if (s.bgVideoLocalPath != null && s.bgVideoLocalPath.isEmpty()) s.bgVideoLocalPath = null;
                             break;
                         }
                     }
@@ -271,6 +277,8 @@ public class SoundStore {
                     if (s.bgVideoUrl != null && s.bgVideoUrl.isEmpty()) s.bgVideoUrl = null;
                     s.bgVideoLocalPath = obj.optString("bgVideoLocalPath", null);
                     if (s.bgVideoLocalPath != null && s.bgVideoLocalPath.isEmpty()) s.bgVideoLocalPath = null;
+                    s.bgVideoTaskId = obj.optString("bgVideoTaskId", null);
+                    if (s.bgVideoTaskId != null && s.bgVideoTaskId.isEmpty()) s.bgVideoTaskId = null;
                     s.isPinned = obj.optBoolean("isPinned", false);
                     s.isDeleted = obj.optBoolean("isDeleted", false);
                     s.lastMessage = obj.optString("lastMessage", "");
@@ -301,6 +309,7 @@ public class SoundStore {
                     obj.put("bgImageUrl", s.bgImageUrl == null ? "" : s.bgImageUrl);
                     obj.put("bgVideoUrl", s.bgVideoUrl == null ? "" : s.bgVideoUrl);
                     obj.put("bgVideoLocalPath", s.bgVideoLocalPath == null ? "" : s.bgVideoLocalPath);
+                    obj.put("bgVideoTaskId", s.bgVideoTaskId == null ? "" : s.bgVideoTaskId);
                 }
                 obj.put("isPinned", s.isPinned);
                 obj.put("isDeleted", s.isDeleted);
@@ -408,6 +417,24 @@ public class SoundStore {
         Sound s = findById(ctx, id);
         if (s != null) {
             s.bgVideoLocalPath = bgVideoLocalPath;
+            save(ctx);
+        }
+    }
+
+    // 设置背景视频生成任务ID（提交任务后调用，用于跨页面恢复轮询）
+    public static synchronized void setBgVideoTaskId(Context ctx, String id, String taskId) {
+        Sound s = findById(ctx, id);
+        if (s != null) {
+            s.bgVideoTaskId = taskId;
+            save(ctx);
+        }
+    }
+
+    // 清除背景视频生成任务ID（任务完成/失败/超时后调用）
+    public static synchronized void clearBgVideoTaskId(Context ctx, String id) {
+        Sound s = findById(ctx, id);
+        if (s != null) {
+            s.bgVideoTaskId = null;
             save(ctx);
         }
     }
